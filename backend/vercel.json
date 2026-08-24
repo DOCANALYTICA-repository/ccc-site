@@ -1,0 +1,4 @@
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "buildCommand": "prisma generate && prisma migrate deploy && tsc -p tsconfig.json"
+}

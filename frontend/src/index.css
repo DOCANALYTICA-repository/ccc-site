@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — PLAN.md section 7.2. Light palette lives on bare :root;
+   dark mode redefines the same variable names under .dark so every
+   component that references a token gets both themes for free. */
+:root {
+  --accent: #e85002;
+  --accent-ink: #c10801; /* orange TEXT only — 6.36:1 on white, see PLAN.md 7.2 */
+  --ink: #000000;
+  --ink-muted: #646464;
+  --hairline: #a7a7a7;
+  --surface: #f9f9f9;
+  --page: #ededed;
+
+  /* Status ramp — grey -> orange -> black, never colour alone (7.3) */
+  --status-unconfirmed-bg: rgba(167, 167, 167, 0.22);
+  --status-unconfirmed-fg: #646464;
+  --status-confirmed-bg: rgba(232, 80, 2, 0.14);
+  --status-confirmed-fg: #c10801;
+  --status-arrived-bg: #000000;
+  --status-arrived-fg: #f9f9f9;
+
+  --brand-gradient: linear-gradient(135deg, #000000 0%, #c10801 38%, #f16001 68%, #d9c3ab 100%);
+}
+
+.dark {
+  --accent: #e85002;
+  --accent-ink: #ff8c52; /* 5.49:1 on #333333, see PLAN.md 7.2 */
+  --ink: #f9f9f9;
+  --ink-muted: #a7a7a7;
+  --hairline: #4a4a4a;
+  --surface: #333333;
+  --page: #000000;
+
+  --status-unconfirmed-bg: rgba(167, 167, 167, 0.16);
+  --status-unconfirmed-fg: #a7a7a7;
+  --status-confirmed-bg: rgba(232, 80, 2, 0.22);
+  --status-confirmed-fg: #ff8c52;
+  --status-arrived-bg: #f9f9f9;
+  --status-arrived-fg: #000000;
+}
+
+* {
+  border-color: var(--hairline);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Minimum 48x48 touch targets on touch devices — PLAN.md section 7.5 */
+@media (pointer: coarse) {
+  .tap-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
+
+.brand-gradient-wash {
+  background-image: var(--brand-gradient);
+}
+
+/* Per-route entrance — replays on every navigation via a `key` on the
+   wrapper in AppShell, respects prefers-reduced-motion via the global
+   media query above. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-in {
+  animation: page-in 0.25s ease-out both;
+}

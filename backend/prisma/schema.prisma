@@ -1,0 +1,246 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [citext]
+}
+
+// -------------------- Enums --------------------
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum ContactSource {
+  MANUAL
+  IMPORT
+  WALK_IN
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum InvitationStatus {
+  UNCONFIRMED
+  CONFIRMED
+  ARRIVED_IN_CAMPUS
+}
+
+// -------------------- Auth --------------------
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique @db.Citext
+  name          String
+  passwordHash  String?  @map("password_hash") // null until an invite is accepted
+  role          Role     @default(STAFF)
+  isActive      Boolean  @default(true) @map("is_active")
+  tokenVersion  Int      @default(0) @map("token_version")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  invitesCreated       UserInvite[]            @relation("InviteCreatedBy")
+  invitesReceived      UserInvite[]            @relation("InviteForUser")
+  contactsCreated      Contact[]               @relation("ContactCreatedBy")
+  eventsCreated        Event[]                 @relation("EventCreatedBy")
+  invitationsAdded     EventInvitation[]       @relation("InvitationAddedBy")
+  statusChanges        EventInvitation[]       @relation("StatusUpdatedBy")
+  historyEntries       InvitationStatusHistory[] @relation("HistoryChangedBy")
+  importBatches        ImportBatch[]           @relation("ImportUploadedBy")
+  auditLogEntries      AuditLog[]              @relation("AuditActor")
+
+  @@map("users")
+}
+
+model UserInvite {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  targetUser  User      @relation("InviteForUser", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique @map("token_hash")
+  purpose     String    @default("INVITE") // INVITE | RESET
+  expiresAt   DateTime  @map("expires_at")
+  acceptedAt  DateTime? @map("accepted_at")
+  createdBy   String    @map("created_by")
+  creator     User      @relation("InviteCreatedBy", fields: [createdBy], references: [id])
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("user_invites")
+}
+
+model LoginAttempt {
+  id              String   @id @default(uuid())
+  emailAttempted  String   @map("email_attempted") @db.Citext
+  ip              String
+  succeeded       Boolean
+  at              DateTime @default(now())
+
+  @@index([emailAttempted, at])
+  @@index([ip, at])
+  @@map("login_attempts")
+}
+
+// -------------------- Contacts --------------------
+
+model Contact {
+  id            String        @id @default(uuid())
+  fullName      String        @map("full_name")
+  organization  String?
+  designation   String?
+  profileUrl    String?       @map("profile_url")
+  email         String?       @db.Citext
+  altEmail      String?       @map("alt_email") @db.Citext
+  phone         String?
+  altPhone      String?       @map("alt_phone")
+  phoneRaw      String?       @map("phone_raw")
+  dietaryNotes  String?       @map("dietary_notes")
+  notes         String?
+  source        ContactSource @default(MANUAL)
+  createdBy     String?       @map("created_by")
+  creator       User?         @relation("ContactCreatedBy", fields: [createdBy], references: [id])
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  deletedAt     DateTime?     @map("deleted_at")
+
+  tags          ContactTag[]
+  invitations   EventInvitation[]
+
+  @@index([email])
+  @@index([phone])
+  @@map("contacts")
+}
+
+model Tag {
+  id        String       @id @default(uuid())
+  name      String       @unique
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  contacts  ContactTag[]
+
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId String  @map("contact_id")
+  tagId     String  @map("tag_id")
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+// -------------------- Events --------------------
+
+model Event {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  venue       String?
+  startAt     DateTime?   @map("start_at")
+  endAt       DateTime?   @map("end_at")
+  timezone    String      @default("Asia/Kolkata")
+  status      EventStatus @default(DRAFT)
+  createdBy   String?     @map("created_by")
+  creator     User?       @relation("EventCreatedBy", fields: [createdBy], references: [id])
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  invitations EventInvitation[]
+  importBatches ImportBatch[]
+
+  @@map("events")
+}
+
+model EventInvitation {
+  id                String            @id @default(uuid())
+  eventId           String            @map("event_id")
+  contactId         String            @map("contact_id")
+  event             Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contact           Contact           @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  arrivalAt         DateTime?         @map("arrival_at")
+  departureAt       DateTime?         @map("departure_at")
+  status            InvitationStatus  @default(UNCONFIRMED)
+  statusUpdatedAt    DateTime?         @map("status_updated_at")
+  statusUpdatedBy    String?           @map("status_updated_by")
+  statusUpdater      User?             @relation("StatusUpdatedBy", fields: [statusUpdatedBy], references: [id])
+  addedDuringEvent  Boolean           @default(false) @map("added_during_event")
+  travelMode        String?           @map("travel_mode")
+  accommodation     String?
+  notes             String?
+  addedBy           String?           @map("added_by")
+  adder             User?             @relation("InvitationAddedBy", fields: [addedBy], references: [id])
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  history           InvitationStatusHistory[]
+
+  @@unique([eventId, contactId])
+  @@index([eventId, status])
+  @@map("event_invitations")
+}
+
+model InvitationStatusHistory {
+  id           String           @id @default(uuid())
+  invitationId String           @map("invitation_id")
+  invitation   EventInvitation  @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  fromStatus   InvitationStatus? @map("from_status")
+  toStatus     InvitationStatus  @map("to_status")
+  changedBy    String?          @map("changed_by")
+  changer      User?            @relation("HistoryChangedBy", fields: [changedBy], references: [id])
+  changedAt    DateTime         @default(now()) @map("changed_at")
+
+  @@index([invitationId])
+  @@map("invitation_status_history")
+}
+
+// -------------------- Import --------------------
+
+model ImportBatch {
+  id             String   @id @default(uuid())
+  filename       String
+  uploadedBy     String?  @map("uploaded_by")
+  uploader       User?    @relation("ImportUploadedBy", fields: [uploadedBy], references: [id])
+  eventId        String?  @map("event_id")
+  event          Event?   @relation(fields: [eventId], references: [id])
+  totalRows      Int      @map("total_rows")
+  createdCount   Int      @default(0) @map("created_count")
+  updatedCount   Int      @default(0) @map("updated_count")
+  skippedCount   Int      @default(0) @map("skipped_count")
+  errorCount     Int      @default(0) @map("error_count")
+  errors         Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("import_batches")
+}
+
+// -------------------- Audit --------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  diff       Json?
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  at         DateTime @default(now())
+
+  @@index([actorId, at])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}

@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ccc_event_registry_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ccc
+      POSTGRES_PASSWORD: ccc_dev_pw
+      POSTGRES_DB: ccc_event_registry
+    ports:
+      - "5433:5432"
+    volumes:
+      - ccc_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ccc -d ccc_event_registry"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  ccc_pg_data:
