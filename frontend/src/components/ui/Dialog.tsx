@@ -1,6 +1,7 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { X } from "lucide-react";
 
 export function Dialog({
   open,
@@ -38,7 +39,7 @@ export function Dialog({
             className="absolute right-4 top-4 rounded-full p-1 text-ink-muted hover:bg-page tap-target"
             aria-label="Close"
           >
-            ✕
+            <X className="h-5 w-5" aria-hidden />
           </RadixDialog.Close>
         </RadixDialog.Content>
       </RadixDialog.Portal>

@@ -60,7 +60,7 @@ export const invitationDetailSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().trim().email(),
+  identifier: z.string().trim().min(1),
   password: z.string().min(1),
 });
 
@@ -68,6 +68,11 @@ export const createInviteSchema = z.object({
   email: z.string().trim().email(),
   name: z.string().trim().min(1),
   role: z.enum(["ADMIN", "STAFF"]).default("STAFF"),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
 });
 
 export const acceptInviteSchema = z.object({

@@ -1,4 +1,6 @@
 import { Router } from "express";
+import jwt from "jsonwebtoken";
+import { parsePhoneNumberWithError } from "libphonenumber-js";
 import { prisma } from "../lib/prisma.js";
 import {
   signSession,
@@ -13,7 +15,7 @@ import {
 } from "../lib/auth.js";
 import { isLoginLocked, recordLoginAttempt } from "../lib/rateLimit.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { loginSchema, createInviteSchema, acceptInviteSchema } from "../lib/schemas.js";
+import { loginSchema, createInviteSchema, acceptInviteSchema, changePasswordSchema } from "../lib/schemas.js";
 import { logAudit } from "../lib/audit.js";
 
 export const authRouter = Router();
@@ -23,6 +25,26 @@ const RESET_TTL_MS = 60 * 60 * 1000; // 1h
 
 const cookieOpts = { ...SESSION_COOKIE_OPTS, maxAge: SESSION_COOKIE_MAX_AGE_MS };
 
+function normalizeIdentifier(value: string) {
+  const clean = value.trim();
+  if (clean.includes("@")) return clean.toLowerCase();
+  try {
+    return parsePhoneNumberWithError(clean, (process.env.DEFAULT_PHONE_REGION ?? "IN") as "IN").number;
+  } catch {
+    return clean.replace(/[\s()-]/g, "");
+  }
+}
+
+function shapeUser(user: {
+  id: string; email: string | null; phone: string | null; name: string;
+  role: "ADMIN" | "STAFF" | "MEMBER" | "GUEST"; mustChangePassword: boolean;
+}) {
+  return {
+    id: user.id, email: user.email, phone: user.phone, name: user.name,
+    role: user.role, mustChangePassword: user.mustChangePassword,
+  };
+}
+
 // -------------------- Login / logout / me --------------------
 
 authRouter.post("/login", async (req, res) => {
@@ -30,19 +52,22 @@ authRouter.post("/login", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input." });
   }
-  const { email, password } = parsed.data;
+  const { identifier: rawIdentifier, password } = parsed.data;
+  const identifier = normalizeIdentifier(rawIdentifier);
   const ip = req.ip ?? "unknown";
 
-  if (await isLoginLocked(email, ip)) {
+  if (await isLoginLocked(identifier, ip)) {
     return res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findFirst({
+    where: identifier.includes("@") ? { email: identifier } : { phone: identifier },
+  });
 
   // Generic failure message throughout — no user-enumeration leak.
   const genericFail = async () => {
-    await recordLoginAttempt(email, ip, false);
-    return res.status(401).json({ error: "Invalid email or password." });
+    await recordLoginAttempt(identifier, ip, false);
+    return res.status(401).json({ error: "Invalid credentials." });
   };
 
   if (!user || !user.isActive || !user.passwordHash) return genericFail();
@@ -50,13 +75,25 @@ authRouter.post("/login", async (req, res) => {
   const valid = await verifyPassword(user.passwordHash, password);
   if (!valid) return genericFail();
 
-  await recordLoginAttempt(email, ip, true);
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  await recordLoginAttempt(identifier, ip, true);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
+    prisma.networkProfile.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        displayName: user.name,
+        organization: ["ADMIN", "STAFF", "MEMBER"].includes(user.role) ? "CHRIST University" : null,
+        discoverable: user.role !== "GUEST",
+      },
+      update: {},
+    }),
+  ]);
 
   const token = signSession({ sub: user.id, tokenVersion: user.tokenVersion });
   res.cookie(SESSION_COOKIE_NAME, token, cookieOpts);
   return res.json({
-    user: { id: user.id, email: user.email, name: user.name, role: user.role },
+    user: shapeUser(user),
   });
 });
 
@@ -67,6 +104,40 @@ authRouter.post("/logout", (_req, res) => {
 
 authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
+});
+
+authRouter.post("/change-password", requireAuth, async (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input." });
+  const strength = isPasswordStrongEnough(parsed.data.newPassword);
+  if (!strength.ok) return res.status(400).json({ error: strength.reason });
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user?.passwordHash || !(await verifyPassword(user.passwordHash, parsed.data.currentPassword))) {
+    return res.status(400).json({ error: "Current password is incorrect." });
+  }
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await hashPassword(parsed.data.newPassword),
+      mustChangePassword: false,
+      tokenVersion: { increment: 1 },
+    },
+  });
+  const token = signSession({ sub: updated.id, tokenVersion: updated.tokenVersion });
+  res.cookie(SESSION_COOKIE_NAME, token, cookieOpts);
+  await logAudit(req, "user.password_changed", { entityType: "User", entityId: user.id });
+  res.json({ user: shapeUser(updated) });
+});
+
+authRouter.post("/realtime-token", requireAuth, (req, res) => {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  if (!secret) return res.status(503).json({ error: "Realtime is not configured." });
+  const token = jwt.sign(
+    { sub: req.user!.id, role: "authenticated", app_role: req.user!.role, aud: "authenticated" },
+    secret,
+    { expiresIn: "5m" },
+  );
+  res.json({ token, expiresIn: 300 });
 });
 
 // -------------------- Admin: invite a new staff account --------------------
@@ -159,7 +230,7 @@ authRouter.post("/accept-invite", async (req, res) => {
   await prisma.$transaction([
     prisma.user.update({
       where: { id: invite.userId },
-      data: { passwordHash, isActive: true, tokenVersion: { increment: 1 } },
+      data: { passwordHash, mustChangePassword: false, isActive: true, tokenVersion: { increment: 1 } },
     }),
     prisma.userInvite.update({
       where: { id: invite.id },

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
-import { STATUS_ORDER, STATUS_LABELS, StatusChip } from "@/components/StatusChip";
+import { GATE_STATUS_ORDER, STATUS_ORDER, STATUS_LABELS, StatusChip } from "@/components/StatusChip";
 import { WalkInDialog } from "@/components/WalkInDialog";
 import { cn } from "@/lib/cn";
 import type { EventRecord, Invitation, InvitationStatus } from "@/lib/types";
@@ -155,8 +155,8 @@ export function GateCheckIn() {
             {isPending(inv.id) && <span className="text-[10px] text-status-confirmed-fg">syncing…</span>}
             <button
               onClick={() => {
-                const idx = STATUS_ORDER.indexOf(inv.status);
-                const next = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length]!;
+                const idx = GATE_STATUS_ORDER.indexOf(inv.status);
+                const next = GATE_STATUS_ORDER[(Math.max(idx, 0) + 1) % GATE_STATUS_ORDER.length]!;
                 setStatus(inv.id, next);
               }}
               className="tap-target"

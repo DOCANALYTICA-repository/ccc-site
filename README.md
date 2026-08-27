@@ -1,8 +1,8 @@
 # CCC Event Registry
 
-Internal contact directory + per-event guest/status tracker for CCC. Full
-design rationale, data model, and open items live in [PLAN.md](./PLAN.md) —
-this file is just "how do I run it."
+CCC's internal event registry and authenticated community platform: guest
+invitations/check-in, professional connections and messaging, restricted
+Commerce course catalogs, and end-of-event questionnaires.
 
 Two independent apps, deployed as two separate Vercel projects:
 
@@ -54,21 +54,28 @@ Directory** settings.
 
 ### Backend project — Root Directory: `backend`
 
-1. Add **Neon Postgres** from the Vercel Marketplace (injects `DATABASE_URL`
-   / a direct URL automatically).
+1. Create a Supabase project. Use its transaction-mode Supavisor URL for
+   `DATABASE_URL` and session/direct URL for `DIRECT_URL`.
 2. Environment variables (Production + Preview):
    ```
-   DATABASE_URL              # from the Neon integration, add ?pgbouncer=true&connection_limit=1
-   DIRECT_URL                # Neon's unpooled URL — migrations only
+   DATABASE_URL              # Supavisor transaction-mode URL — runtime
+   DIRECT_URL                # Supavisor session/direct URL — migrations
    AUTH_SECRET                # openssl rand -base64 32
+   CHECKIN_SECRET             # separate secret for venue QR challenges
+   SUPABASE_URL
+   SUPABASE_SECRET_KEY
+   SUPABASE_JWT_SECRET        # custom Realtime JWT signing
+   SUPABASE_COURSE_BUCKET=course-resources
    FRONTEND_ORIGIN           # https://<your-frontend-project>.vercel.app
    DEFAULT_PHONE_REGION=IN
    NODE_ENV=production
    ```
-3. Deploy. `vercel.json` routes every request through `api/index.ts`, which
+3. Create a private Storage bucket named `course-resources`, disable public
+   Realtime channels, and apply Prisma migrations.
+4. Deploy. `vercel.json` routes every request through `api/index.ts`, which
    wraps the whole Express app as one serverless function — proportionate
    for two staff users and under 100 contacts (see PLAN.md section 1).
-4. Once live, seed the first admin **locally against production**:
+5. Once live, seed the first admin **locally against production**:
    ```bash
    DATABASE_URL="<prod pooled url>" DIRECT_URL="<prod direct url>" npm run seed:admin
    ```
@@ -77,7 +84,8 @@ Directory** settings.
 
 ### Frontend project — Root Directory: `frontend`
 
-1. Environment variable: `VITE_API_URL=https://<your-backend-project>.vercel.app/api`
+1. Environment variables: `VITE_API_URL`, `VITE_SUPABASE_URL`, and
+   `VITE_SUPABASE_PUBLISHABLE_KEY`.
 2. Deploy. Vercel auto-detects the Vite build.
 
 ### Why cookies need care here

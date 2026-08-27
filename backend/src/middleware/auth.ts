@@ -5,9 +5,11 @@ import { verifySession, SESSION_COOKIE_NAME, SESSION_COOKIE_OPTS } from "../lib/
 
 export interface AuthedUser {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   name: string;
   role: Role;
+  mustChangePassword: boolean;
 }
 
 declare global {
@@ -40,7 +42,18 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return res.status(401).json({ error: "Session invalid or expired." });
   }
 
-  req.user = { id: user.id, email: user.email, name: user.name, role: user.role };
+  req.user = {
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    name: user.name,
+    role: user.role,
+    mustChangePassword: user.mustChangePassword,
+  };
+  const passwordAllowed = ["/api/auth/me", "/api/auth/change-password", "/api/auth/logout"];
+  if (user.mustChangePassword && !passwordAllowed.some((path) => req.originalUrl.startsWith(path))) {
+    return res.status(428).json({ error: "Change your temporary password to continue.", code: "PASSWORD_CHANGE_REQUIRED" });
+  }
   next();
 }
 
@@ -53,3 +66,5 @@ export function requireRole(...roles: Role[]) {
     next();
   };
 }
+
+export const requireInternal = requireRole("ADMIN", "STAFF");

@@ -6,13 +6,24 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Login } from "@/pages/Login";
 import { AcceptInvite } from "@/pages/AcceptInvite";
-import { Dashboard } from "@/pages/Dashboard";
+import { Home } from "@/pages/Home";
 import { Contacts } from "@/pages/Contacts";
 import { Events } from "@/pages/Events";
 import { EventDetail } from "@/pages/EventDetail";
 import { GateCheckIn } from "@/pages/GateCheckIn";
 import { Import } from "@/pages/Import";
 import { Users } from "@/pages/Users";
+import { ChangePassword } from "@/pages/ChangePassword";
+import { NetworkPage } from "@/pages/Network";
+import { MessagesPage } from "@/pages/Messages";
+import { CoursesPage, CourseDetailPage } from "@/pages/Courses";
+import { ProfilePage } from "@/pages/Profile";
+import { NotificationsPage } from "@/pages/Notifications";
+import { CheckInPage } from "@/pages/CheckIn";
+import { EventSurveyPage } from "@/pages/EventSurvey";
+import { AdminHub } from "@/pages/AdminHub";
+import { CoursesAdminPage } from "@/pages/CoursesAdmin";
+import { SurveysAdminPage } from "@/pages/SurveysAdmin";
 
 export default function App() {
   return (
@@ -23,6 +34,9 @@ export default function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/accept-invite" element={<AcceptInvite />} />
+              <Route element={<ProtectedRoute allowPasswordChange />}>
+                <Route path="/change-password" element={<ChangePassword />} />
+              </Route>
 
               {/* Gate check-in is its own full-screen layout — no AppShell chrome. */}
               <Route element={<ProtectedRoute />}>
@@ -31,7 +45,18 @@ export default function App() {
 
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<Home />} />
+                  <Route path="/network" element={<NetworkPage />} />
+                  <Route path="/messages" element={<MessagesPage />} />
+                  <Route path="/courses" element={<CoursesPage />} />
+                  <Route path="/courses/:id" element={<CourseDetailPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/notifications" element={<NotificationsPage />} />
+                  <Route path="/check-in" element={<CheckInPage />} />
+                  <Route path="/events/:id/survey" element={<EventSurveyPage />} />
+                  <Route path="/admin" element={<AdminHub />} />
+                  <Route path="/surveys-admin" element={<SurveysAdminPage />} />
+                  <Route path="/courses-admin" element={<CoursesAdminPage />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/events" element={<Events />} />
                   <Route path="/events/:id" element={<EventDetail />} />
@@ -39,7 +64,7 @@ export default function App() {
                 </Route>
               </Route>
 
-              <Route element={<ProtectedRoute adminOnly />}>
+              <Route element={<ProtectedRoute roles={["ADMIN"]} />}>
                 <Route element={<AppShell />}>
                   <Route path="/users" element={<Users />} />
                 </Route>

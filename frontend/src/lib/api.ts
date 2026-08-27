@@ -1,4 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+// VITE_API_URL is intentionally blank in local development so Vite can proxy
+// same-origin /api requests. Nullish coalescing does not treat "" as absent.
+const configuredApiBase = String(import.meta.env.VITE_API_URL ?? "").trim();
+const API_BASE = (configuredApiBase || "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;
