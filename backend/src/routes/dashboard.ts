@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireInternal } from "../middleware/auth.js";
 
 export const dashboardRouter = Router();
-dashboardRouter.use(requireAuth);
+dashboardRouter.use(requireAuth, requireInternal);
 
 dashboardRouter.get("/", async (_req, res) => {
   const events = await prisma.event.findMany({

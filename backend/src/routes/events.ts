@@ -1,7 +1,10 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
+import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireInternal } from "../middleware/auth.js";
+import { ensureGuestAccount } from "../lib/provision.js";
 import { logAudit } from "../lib/audit.js";
 import {
   eventInputSchema,
@@ -13,7 +16,7 @@ import {
 } from "../lib/schemas.js";
 
 export const eventsRouter = Router();
-eventsRouter.use(requireAuth);
+eventsRouter.use(requireAuth, requireInternal);
 
 // -------------------- Events --------------------
 
@@ -121,16 +124,28 @@ eventsRouter.post("/:id/invitations", async (req, res) => {
   const existingIds = new Set(existing.map((e) => e.contactId));
   const toCreate = contactIds.filter((id) => !existingIds.has(id));
 
-  if (toCreate.length > 0) {
-    await prisma.eventInvitation.createMany({
-      data: toCreate.map((contactId) => ({
-        eventId: req.params.id,
-        contactId,
-        arrivalAt: arrivalAt ?? null,
-        addedBy: req.user!.id,
-      })),
-    });
-  }
+  const provisioning: Record<string, string> = {};
+  if (toCreate.length > 0) await prisma.$transaction(async (tx) => {
+    for (const contactId of toCreate) {
+      const invitation = await tx.eventInvitation.create({
+        data: { eventId: req.params.id, contactId, arrivalAt: arrivalAt ?? null, addedBy: req.user!.id },
+        include: { event: { select: { name: true } } },
+      });
+      const account = await ensureGuestAccount(tx, contactId);
+      provisioning[contactId] = account.status;
+      if ("user" in account && account.user) {
+        await tx.notification.create({
+          data: {
+            userId: account.user.id,
+            type: "EVENT_INVITATION",
+            title: `You're invited to ${invitation.event.name}`,
+            entityType: "EventInvitation",
+            entityId: invitation.id,
+          },
+        });
+      }
+    }
+  });
 
   await logAudit(req, "invitation.bulk_created", {
     entityType: "Event",
@@ -138,7 +153,7 @@ eventsRouter.post("/:id/invitations", async (req, res) => {
     diff: { requested: contactIds.length, created: toCreate.length, alreadyInvited: existingIds.size },
   });
 
-  res.status(201).json({ created: toCreate.length, alreadyInvited: existingIds.size });
+  res.status(201).json({ created: toCreate.length, alreadyInvited: existingIds.size, provisioning });
 });
 
 eventsRouter.patch("/:id/invitations/:invId", async (req, res) => {
@@ -146,6 +161,8 @@ eventsRouter.patch("/:id/invitations/:invId", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input." });
   }
+  const owned = await prisma.eventInvitation.findFirst({ where: { id: req.params.invId, eventId: req.params.id } });
+  if (!owned) return res.status(404).json({ error: "Invitation not found." });
   const invitation = await prisma.eventInvitation.update({
     where: { id: req.params.invId },
     data: parsed.data,
@@ -155,7 +172,8 @@ eventsRouter.patch("/:id/invitations/:invId", async (req, res) => {
 });
 
 eventsRouter.delete("/:id/invitations/:invId", async (req, res) => {
-  await prisma.eventInvitation.delete({ where: { id: req.params.invId } });
+  const deleted = await prisma.eventInvitation.deleteMany({ where: { id: req.params.invId, eventId: req.params.id } });
+  if (!deleted.count) return res.status(404).json({ error: "Invitation not found." });
   await logAudit(req, "invitation.removed", { entityType: "EventInvitation", entityId: req.params.invId });
   res.status(204).end();
 });
@@ -194,8 +212,44 @@ eventsRouter.patch("/:id/invitations/:invId/status", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid status." });
   }
+  const owned = await prisma.eventInvitation.findFirst({ where: { id: req.params.invId, eventId: req.params.id } });
+  if (!owned) return res.status(404).json({ error: "Invitation not found." });
   const invitation = await applyStatusChange(req.params.invId, parsed.data.status, req.user!.id);
   res.json({ invitation });
+});
+
+eventsRouter.post("/:id/check-in-session", async (req, res) => {
+  const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+  if (!event) return res.status(404).json({ error: "Event not found." });
+  const session = await prisma.$transaction(async (tx) => {
+    await tx.eventCheckInSession.updateMany({
+      where: { eventId: event.id, isActive: true },
+      data: { isActive: false, endedAt: new Date() },
+    });
+    return tx.eventCheckInSession.create({
+      data: { eventId: event.id, startedBy: req.user!.id },
+    });
+  });
+  res.status(201).json({ session });
+});
+
+eventsRouter.get("/:id/check-in-token", async (req, res) => {
+  const session = await prisma.eventCheckInSession.findFirst({
+    where: { eventId: req.params.id, isActive: true },
+    orderBy: { startedAt: "desc" },
+  });
+  if (!session) return res.status(404).json({ error: "No active check-in session." });
+  const secret = process.env.CHECKIN_SECRET ?? process.env.AUTH_SECRET!;
+  const token = jwt.sign({ eventId: req.params.id, sessionId: session.id, nonce: crypto.randomUUID() }, secret, { expiresIn: "60s" });
+  res.json({ token, expiresAt: new Date(Date.now() + 60_000) });
+});
+
+eventsRouter.delete("/:id/check-in-session", async (req, res) => {
+  await prisma.eventCheckInSession.updateMany({
+    where: { eventId: req.params.id, isActive: true },
+    data: { isActive: false, endedAt: new Date() },
+  });
+  res.status(204).end();
 });
 
 eventsRouter.post("/:id/invitations/bulk-status", async (req, res) => {
@@ -204,6 +258,8 @@ eventsRouter.post("/:id/invitations/bulk-status", async (req, res) => {
     return res.status(400).json({ error: "Invalid input." });
   }
   const { invitationIds, status } = parsed.data;
+  const owned = await prisma.eventInvitation.count({ where: { id: { in: invitationIds }, eventId: req.params.id } });
+  if (owned !== invitationIds.length) return res.status(400).json({ error: "One or more invitations do not belong to this event." });
 
   for (const invId of invitationIds) {
     await applyStatusChange(invId, status, req.user!.id);
@@ -282,8 +338,22 @@ eventsRouter.post("/:id/walk-in", async (req, res) => {
     return invitation;
   });
 
+  const account = await ensureGuestAccount(prisma, result.contactId);
+  if ("user" in account && account.user) {
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { name: true } });
+    await prisma.notification.create({
+      data: {
+        userId: account.user.id,
+        type: "EVENT_INVITATION",
+        title: `You're registered for ${event?.name ?? "a CCC event"}`,
+        entityType: "EventInvitation",
+        entityId: result.id,
+      },
+    });
+  }
+
   await logAudit(req, "invitation.walk_in", { entityType: "Event", entityId: eventId, diff: { invitationId: result.id } });
-  res.status(201).json({ invitation: result });
+  res.status(201).json({ invitation: result, provisioning: account.status });
 });
 
 // -------------------- Roster export --------------------
@@ -328,4 +398,28 @@ eventsRouter.get("/:id/export", async (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="roster-export.xlsx"`);
   await wb.xlsx.write(res);
   res.end();
+});
+
+// A deliberately separate onboarding export: the general roster must never
+// imply that every guest still uses the bootstrap credential.
+eventsRouter.get("/:id/onboarding.csv", async (req, res) => {
+  const invitations = await prisma.eventInvitation.findMany({
+    where: { eventId: req.params.id },
+    include: { contact: { include: { account: { select: { phone: true, mustChangePassword: true, isActive: true } } } } },
+    orderBy: { contact: { fullName: "asc" } },
+  });
+  const quote = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const rows = [
+    ["Guest", "Phone login", "Onboarding state", "Bootstrap instruction"],
+    ...invitations.map(({ contact }) => {
+      const account = contact.account;
+      const state = !contact.phone ? "Account setup needed" : !account ? "Phone conflict or setup needed" : !account.isActive ? "Account disabled" : account.mustChangePassword ? "Password change required" : "Onboarded";
+      const instruction = account?.mustChangePassword ? "Sign in with this phone and temporary password 1234, then choose a private password." : "";
+      return [contact.fullName, account?.phone ?? contact.phone ?? "", state, instruction];
+    }),
+  ];
+  await logAudit(req, "event.onboarding_exported", { entityType: "Event", entityId: req.params.id, diff: { count: invitations.length } });
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="guest-onboarding.csv"');
+  res.send(`\uFEFF${rows.map((row) => row.map(quote).join(",")).join("\n")}`);
 });

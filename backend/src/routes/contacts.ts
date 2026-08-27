@@ -1,12 +1,12 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireInternal } from "../middleware/auth.js";
 import { contactInputSchema } from "../lib/schemas.js";
 import { logAudit } from "../lib/audit.js";
 
 export const contactsRouter = Router();
-contactsRouter.use(requireAuth);
+contactsRouter.use(requireAuth, requireInternal);
 
 const contactSelect = {
   id: true,

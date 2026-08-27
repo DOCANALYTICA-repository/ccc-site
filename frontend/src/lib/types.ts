@@ -1,13 +1,32 @@
-export type Role = "ADMIN" | "STAFF";
-export type InvitationStatus = "UNCONFIRMED" | "CONFIRMED" | "ARRIVED_IN_CAMPUS";
+export type Role = "ADMIN" | "STAFF" | "MEMBER" | "GUEST";
+export type InvitationStatus = "UNCONFIRMED" | "CONFIRMED" | "DECLINED" | "ARRIVED_IN_CAMPUS";
 export type EventStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
 export type ContactSource = "MANUAL" | "IMPORT" | "WALK_IN";
 
 export interface AuthedUser {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   name: string;
   role: Role;
+  mustChangePassword: boolean;
+}
+
+export interface NetworkProfile {
+  userId: string;
+  displayName: string;
+  organization: string | null;
+  designation: string | null;
+  headline: string | null;
+  bio: string | null;
+  publicEmail: string | null;
+  linkedInUrl: string | null;
+  discoverable: boolean;
+  shareDesignation: boolean;
+  shareHeadline: boolean;
+  shareBio: boolean;
+  shareEmail: boolean;
+  shareLinkedIn: boolean;
 }
 
 export interface Tag {

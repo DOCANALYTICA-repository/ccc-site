@@ -2,11 +2,11 @@ import jwt from "jsonwebtoken";
 import { hash, verify } from "@node-rs/argon2";
 import crypto from "node:crypto";
 
-const AUTH_SECRET: string = (() => {
+function authSecret(): string {
   const secret = process.env.AUTH_SECRET;
   if (!secret) throw new Error("AUTH_SECRET env var is required");
   return secret;
-})();
+}
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60; // 8h, matches PLAN.md section 6.5
 
@@ -16,12 +16,12 @@ export interface SessionPayload {
 }
 
 export function signSession(payload: SessionPayload): string {
-  return jwt.sign(payload, AUTH_SECRET, { expiresIn: SESSION_TTL_SECONDS });
+  return jwt.sign(payload, authSecret(), { expiresIn: SESSION_TTL_SECONDS });
 }
 
 export function verifySession(token: string): SessionPayload | null {
   try {
-    const decoded = jwt.verify(token, AUTH_SECRET);
+    const decoded = jwt.verify(token, authSecret());
     if (typeof decoded === "string") return null;
     if (typeof decoded.sub !== "string" || typeof decoded.tokenVersion !== "number") return null;
     return { sub: decoded.sub, tokenVersion: decoded.tokenVersion };

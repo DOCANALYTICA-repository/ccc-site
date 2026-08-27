@@ -8,6 +8,12 @@ import { contactsRouter } from "./routes/contacts.js";
 import { eventsRouter } from "./routes/events.js";
 import { importRouter } from "./routes/import.js";
 import { dashboardRouter } from "./routes/dashboard.js";
+import { communityRouter } from "./routes/community.js";
+import { networkRouter } from "./routes/network.js";
+import { coursesRouter } from "./routes/courses.js";
+import { surveysRouter } from "./routes/surveys.js";
+import { notificationsRouter } from "./routes/notifications.js";
+import { requireTrustedOrigin, trustedOrigins } from "./middleware/security.js";
 
 export function createApp() {
   const app = express();
@@ -25,13 +31,16 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5173",
+      origin(origin, callback) {
+        callback(null, !origin || trustedOrigins().includes(origin));
+      },
       credentials: true,
     }),
   );
 
   app.use(cookieParser());
   app.use(express.json({ limit: "8mb" })); // Import batches of 500 rows; see PLAN.md section 5.2.
+  app.use(requireTrustedOrigin);
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
@@ -41,6 +50,11 @@ export function createApp() {
   app.use("/api/events", eventsRouter);
   app.use("/api/import", importRouter);
   app.use("/api/dashboard", dashboardRouter);
+  app.use("/api/community", communityRouter);
+  app.use("/api/network", networkRouter);
+  app.use("/api/courses", coursesRouter);
+  app.use("/api/surveys", surveysRouter);
+  app.use("/api/notifications", notificationsRouter);
 
   app.use((_req, res) => res.status(404).json({ error: "Not found." }));
 

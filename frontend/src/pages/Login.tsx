@@ -7,12 +7,13 @@ import { Input, Label } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import { CccLogo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
+import { Moon, Sun } from "lucide-react";
 
 export function Login() {
   const { login } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(identifier, password);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -35,10 +36,10 @@ export function Login() {
     <div className="flex min-h-dvh flex-col bg-page">
       <button
         onClick={toggle}
-        className="tap-target absolute right-4 top-4 rounded-control px-2 text-lg"
+        className="tap-target absolute right-4 top-4 flex h-12 w-12 items-center justify-center rounded-control text-ink hover:bg-surface"
         aria-label="Toggle theme"
       >
-        {theme === "dark" ? "☀" : "☾"}
+        {theme === "dark" ? <Sun className="h-5 w-5" aria-hidden="true" /> : <Moon className="h-5 w-5" aria-hidden="true" />}
       </button>
 
       <div className="flex flex-1 items-center justify-center px-4">
@@ -50,18 +51,18 @@ export function Login() {
           <div className="brand-gradient-wash overflow-hidden rounded-card p-[1px]">
             <Card className="!rounded-[23px] bg-surface">
               <h1 className="mb-1 text-lg font-semibold text-ink">Sign in</h1>
-              <p className="mb-5 text-sm text-ink-muted">Staff accounts only — ask an admin for access.</p>
+              <p className="mb-5 text-sm text-ink-muted">Staff use email. Members and guests use their phone number.</p>
 
               <form onSubmit={onSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="identifier">Email or phone number</Label>
                   <Input
-                    id="email"
-                    type="email"
+                    id="identifier"
+                    type="text"
                     autoComplete="username"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
                   />
                 </div>
                 <div>

@@ -1,12 +1,13 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireInternal } from "../middleware/auth.js";
 import { logAudit } from "../lib/audit.js";
+import { ensureGuestAccount } from "../lib/provision.js";
 import { commitImportSchema, type ImportRow } from "../lib/schemas.js";
 
 export const importRouter = Router();
-importRouter.use(requireAuth);
+importRouter.use(requireAuth, requireInternal);
 
 // Blank template with the exact seven headers the real guest-list export
 // uses — see PLAN.md section 3. Downloadable from the import screen.
@@ -162,6 +163,19 @@ importRouter.post("/commit", async (req, res) => {
       await prisma.eventInvitation.createMany({
         data: toInvite.map((contactId) => ({ eventId: inviteToEventId, contactId, addedBy: req.user!.id })),
       });
+      const event = await prisma.event.findUnique({ where: { id: inviteToEventId }, select: { name: true } });
+      for (const contactId of toInvite) {
+        const account = await ensureGuestAccount(prisma, contactId);
+        if ("user" in account && account.user) await prisma.notification.create({
+          data: {
+            userId: account.user.id,
+            type: "EVENT_INVITATION",
+            title: `You're invited to ${event?.name ?? "a CCC event"}`,
+            entityType: "Event",
+            entityId: inviteToEventId,
+          },
+        });
+      }
       invitedCount = toInvite.length;
     }
   }

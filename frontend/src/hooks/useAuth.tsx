@@ -5,7 +5,8 @@ import type { AuthedUser } from "@/lib/types";
 interface AuthContextValue {
   user: AuthedUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -32,8 +33,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function login(email: string, password: string) {
-    const { user } = await api.post<{ user: AuthedUser }>("/auth/login", { email, password });
+  async function login(identifier: string, password: string) {
+    const { user } = await api.post<{ user: AuthedUser }>("/auth/login", { identifier, password });
+    setUser(user);
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string) {
+    const { user } = await api.post<{ user: AuthedUser }>("/auth/change-password", { currentPassword, newPassword });
     setUser(user);
   }
 
@@ -43,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, changePassword, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );
