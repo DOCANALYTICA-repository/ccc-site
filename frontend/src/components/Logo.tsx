@@ -31,8 +31,8 @@ export function DocAnalyticaLogo({ className }: { className?: string }) {
   return (
     <img
       src={theme === "dark" ? "/brand/doc-analytica-dark.png" : "/brand/doc-analytica-light.png"}
-      alt="Doc Analytica"
-      className={className ?? "h-9 w-auto sm:h-11"}
+      alt="DOC Analytica"
+      className={className ?? "h-12 w-auto sm:h-14"}
     />
   );
 }
