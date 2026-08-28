@@ -335,18 +335,16 @@ export function SurveysAdminPage() {
                     <p className="truncate text-sm font-medium text-ink">{template.name}</p>
                     <p className="text-xs text-ink-muted">{template.questions.length} questions</p>
                   </div>
-                  <div className="flex shrink-0 gap-1">
-                    <Button type="button" variant="secondary" size="sm" onClick={() => editTemplate(template)}>
-                      <Pencil className="h-3.5 w-3.5" aria-hidden />Edit
-                    </Button>
-                    <Button
-                      type="button" variant="ghost" size="sm"
-                      onClick={() => deleteTemplate(template)}
-                      aria-label={`Delete ${template.name}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    </Button>
-                  </div>
+                  {/* Editing happens from "Edit questions" in the event panel,
+                      which acts on the template selected there. */}
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    className="shrink-0"
+                    onClick={() => deleteTemplate(template)}
+                    aria-label={`Delete ${template.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </Button>
                 </li>
               ))}
               {!templates.length && <li className="py-3 text-sm text-ink-muted">No templates yet.</li>}
