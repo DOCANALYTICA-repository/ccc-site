@@ -24,6 +24,7 @@ import { EventSurveyPage } from "@/pages/EventSurvey";
 import { AdminHub } from "@/pages/AdminHub";
 import { CoursesAdminPage } from "@/pages/CoursesAdmin";
 import { SurveysAdminPage } from "@/pages/SurveysAdmin";
+import { SurveyAnalyticsPage } from "@/pages/SurveyAnalytics";
 
 export default function App() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
                 <Route element={<AppShell />}>
                   <Route path="/admin" element={<AdminHub />} />
                   <Route path="/surveys-admin" element={<SurveysAdminPage />} />
+                  <Route path="/survey-analytics" element={<SurveyAnalyticsPage />} />
                   <Route path="/courses-admin" element={<CoursesAdminPage />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/events" element={<Events />} />

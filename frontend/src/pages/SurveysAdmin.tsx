@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { BarChart3, FileQuestion, Plus, Trash2 } from "lucide-react";
-import { api, downloadFile } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Input, Label, Textarea } from "@/components/ui/Input";
-import { BarChart, Donut } from "@/components/ui/BarChart";
+import { Input, Label } from "@/components/ui/Input";
+import { Donut } from "@/components/ui/BarChart";
 
 type QuestionType = "YES_NO" | "SINGLE_SELECT" | "MULTI_SELECT" | "TEXT" | "SCALE_1_5";
 
@@ -27,25 +28,11 @@ interface DraftQuestion {
 interface Template { id: string; name: string; questions: Array<{ id: string; prompt: string; type: QuestionType }> }
 interface Event { id: string; name: string }
 
-interface ReportQuestion {
-  id: string;
-  prompt: string;
-  type: QuestionType;
-  section: string | null;
-  options: string[] | null;
-  yes?: number;
-  no?: number;
-  counts?: Array<{ option: string; count: number }>;
-  responded?: number;
-  distribution?: Array<{ value: number; count: number }>;
-  average?: number;
-  responses?: string[];
-}
-
+// Only the bits this screen needs — the full per-question breakdown is the
+// analytics screen's job, so this page just reads status and completion.
 interface Report {
   survey: { id: string; title: string; status: "DRAFT" | "OPEN" | "CLOSED" };
   completion: { arrived: number; submitted: number; outstanding: number };
-  questions: ReportQuestion[];
 }
 
 function emptyQuestion(): DraftQuestion {
@@ -278,62 +265,34 @@ export function SurveysAdminPage() {
             <div className="flex flex-wrap gap-2">
               <Button disabled={!eventId || !report} onClick={() => status("OPEN")}>Open form</Button>
               <Button disabled={!eventId || !report} variant="secondary" onClick={() => status("CLOSED")}>Close form</Button>
-              <Button disabled={!eventId || !report} variant="secondary" onClick={viewReport}>Refresh report</Button>
-              <Button disabled={!eventId || !report} variant="secondary" onClick={() => downloadFile(`/surveys/events/${eventId}/export.csv`, "survey-responses.csv")}>Export CSV</Button>
+              <Button disabled={!eventId || !report} variant="secondary" onClick={viewReport}>Refresh status</Button>
             </div>
           </div>
         </Card>
       </div>
 
       {report && (
-        <Card className="p-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-ink">Results</h2>
-            <Donut value={report.completion.submitted} total={report.completion.arrived} label={`${report.completion.submitted} of ${report.completion.arrived} checked-in guests submitted`} />
+        <Card className="flex flex-wrap items-center justify-between gap-4 p-5">
+          <div className="flex items-center gap-4">
+            <Donut
+              value={report.completion.submitted}
+              total={report.completion.arrived}
+              label={`${report.completion.submitted} of ${report.completion.arrived} checked-in guests submitted`}
+            />
+            <div>
+              <h2 className="text-lg font-semibold text-ink">Results live in Analytics</h2>
+              <p className="mt-1 max-w-md text-sm text-ink-muted">
+                Charts by industry and role, follow-up leads, and every individual response are on the analytics screen.
+              </p>
+            </div>
           </div>
-          <div className="mt-6 space-y-5">
-            {report.questions.map((q) => (
-              <div key={q.id} className="rounded-control bg-page p-4">
-                {q.section && <p className="text-xs font-semibold uppercase tracking-wide text-accent-ink">{q.section}</p>}
-                <p className="mt-1 font-medium text-ink">{q.prompt}</p>
-                <div className="mt-3">
-                  <QuestionReport question={q} />
-                </div>
-              </div>
-            ))}
-          </div>
+          <Link to={`/survey-analytics?event=${eventId}`}>
+            <Button>
+              <BarChart3 className="h-4 w-4" aria-hidden />View analytics
+            </Button>
+          </Link>
         </Card>
       )}
     </div>
-  );
-}
-
-function QuestionReport({ question }: { question: ReportQuestion }) {
-  if (question.type === "YES_NO") {
-    const total = (question.yes ?? 0) + (question.no ?? 0);
-    return <BarChart total={total} items={[{ label: "Yes", count: question.yes ?? 0 }, { label: "No", count: question.no ?? 0 }]} accent />;
-  }
-  if (question.type === "SINGLE_SELECT" || question.type === "MULTI_SELECT") {
-    const total = question.responded ?? 0;
-    return <BarChart total={total} items={(question.counts ?? []).map((c) => ({ label: c.option, count: c.count }))} />;
-  }
-  if (question.type === "SCALE_1_5") {
-    const total = question.responded ?? 0;
-    return (
-      <div className="space-y-2">
-        <p className="text-sm text-ink-muted">Average: <span className="font-semibold text-ink">{(question.average ?? 0).toFixed(1)} / 5</span></p>
-        <BarChart total={total} items={(question.distribution ?? []).map((d) => ({ label: String(d.value), count: d.count }))} accent />
-      </div>
-    );
-  }
-  // TEXT
-  const responses = question.responses ?? [];
-  if (!responses.length) return <p className="text-sm text-ink-muted">No responses yet.</p>;
-  return (
-    <ul className="max-h-56 space-y-2 overflow-y-auto text-sm">
-      {responses.map((r, i) => (
-        <li key={i} className="rounded-control border border-hairline bg-surface p-2 text-ink">{r}</li>
-      ))}
-    </ul>
   );
 }
