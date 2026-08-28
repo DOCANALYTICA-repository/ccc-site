@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -23,17 +24,9 @@ function formatDate(iso: string | null) {
 }
 
 export function Events() {
-  const [events, setEvents] = useState<EventRecord[] | null>(null);
+  const { data, refetch: load } = useQuery("/events", () => api.get<{ events: EventRecord[] }>("/events"));
+  const events = data?.events;
   const [open, setOpen] = useState(false);
-
-  async function load() {
-    const { events } = await api.get<{ events: EventRecord[] }>("/events");
-    setEvents(events);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   return (
     <div className="space-y-5">

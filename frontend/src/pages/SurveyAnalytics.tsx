@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BarChart3, Download, Search, Users } from "lucide-react";
 import { api, downloadFile } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -36,12 +37,20 @@ interface EventOption { id: string; name: string }
 
 export function SurveyAnalyticsPage() {
   const [params, setParams] = useSearchParams();
-  const [events, setEvents] = useState<EventOption[]>([]);
   const [eventId, setEventId] = useState(params.get("event") ?? "");
-  const [data, setData] = useState<Analytics | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const tab: Tab = params.get("tab") === "responses" ? "responses" : "analytics";
+
+  const eventsQuery = useQuery("/events", () => api.get<{ events: EventOption[] }>("/events"));
+  const events = useMemo(() => eventsQuery.data?.events ?? [], [eventsQuery.data]);
+  // Analytics is a heavy aggregate — cache it so flipping between the two tabs
+  // (and back from a respondent) repaints instantly instead of refetching.
+  const analyticsQuery = useQuery(
+    eventId ? `/surveys/events/${eventId}/analytics` : null,
+    () => api.get<Analytics>(`/surveys/events/${eventId}/analytics`),
+  );
+  const data = analyticsQuery.data ?? null;
+  const loading = analyticsQuery.loading || (eventsQuery.loading && !eventId);
+  const loadError = analyticsQuery.error ? "No questionnaire is attached to this event yet." : null;
 
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS });
   const [search, setSearch] = useState("");
@@ -49,21 +58,8 @@ export function SurveyAnalyticsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<{ events: EventOption[] }>("/events").then(({ events: list }) => {
-      setEvents(list);
-      setEventId((current) => current || list[0]?.id || "");
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!eventId) { setData(null); setLoading(false); return; }
-    setLoading(true);
-    setLoadError(null);
-    api.get<Analytics>(`/surveys/events/${eventId}/analytics`)
-      .then((result) => { setData(result); setLoadError(null); })
-      .catch(() => { setData(null); setLoadError("No questionnaire is attached to this event yet."); })
-      .finally(() => setLoading(false));
-  }, [eventId]);
+    setEventId((current) => current || events[0]?.id || "");
+  }, [events]);
 
   function setTab(next: Tab) {
     const updated = new URLSearchParams(params);

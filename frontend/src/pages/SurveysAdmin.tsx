@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, FileQuestion, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -41,8 +42,10 @@ function emptyQuestion(): DraftQuestion {
 
 export function SurveysAdminPage() {
   const { push } = useToast();
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
+  const templatesQuery = useQuery("/surveys/templates", () => api.get<{ templates: Template[] }>("/surveys/templates"));
+  const eventsQuery = useQuery("/events", () => api.get<{ events: Event[] }>("/events"));
+  const templates = templatesQuery.data?.templates ?? [];
+  const events = eventsQuery.data?.events ?? [];
   const [name, setName] = useState("");
   const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([emptyQuestion()]);
   const [eventId, setEventId] = useState("");
@@ -51,16 +54,11 @@ export function SurveysAdminPage() {
   const [report, setReport] = useState<Report | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const [t, e] = await Promise.all([
-      api.get<{ templates: Template[] }>("/surveys/templates"),
-      api.get<{ events: Event[] }>("/events"),
-    ]);
-    setTemplates(t.templates);
-    setEvents(e.events);
-    setEventId((current) => current || e.events[0]?.id || "");
-  }
-  useEffect(() => { load(); }, []);
+  // Default to the first event so the status and action buttons aren't dead on
+  // arrival — an unselected dropdown reads as "the questionnaire is missing".
+  useEffect(() => {
+    setEventId((current) => current || events[0]?.id || "");
+  }, [events]);
 
   // Auto-load the report whenever the selected event has an attached
   // survey, so "not seeing anything" isn't the default first impression —
@@ -107,7 +105,7 @@ export function SurveysAdminPage() {
       setName("");
       setDraftQuestions([emptyQuestion()]);
       push("Questionnaire template created.", "success");
-      load();
+      void templatesQuery.refetch();
     } catch {
       push("Couldn't create template — check the questions above.", "error");
     } finally {

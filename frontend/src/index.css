@@ -83,18 +83,20 @@ body {
 
 /* Per-route entrance — replays on every navigation via a `key` on the
    wrapper in AppShell, respects prefers-reduced-motion via the global
-   media query above. */
+   media query above.
+
+   Deliberately slight: routes now paint from cache on the first frame, and a
+   fade up from fully transparent made every tab switch read as a page reload.
+   A short partial fade marks the transition without blanking anything. */
 @keyframes page-in {
   from {
-    opacity: 0;
-    transform: translateY(8px);
+    opacity: 0.55;
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 .animate-page-in {
-  animation: page-in 0.25s ease-out both;
+  animation: page-in 0.14s ease-out both;
 }

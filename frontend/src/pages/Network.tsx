@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Building2, Check, Clock3, ExternalLink, Mail, MessageCircle, Search, UserPlus, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery, invalidateQueries } from "@/hooks/useQuery";
+import { useDebounced } from "@/hooks/useDebounced";
 
 interface Person {
   userId: string;
@@ -21,22 +23,25 @@ interface Person {
 
 export function NetworkPage() {
   const { user } = useAuth();
-  const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const search = useDebounced(query);
+  const key = `/network/people?q=${encodeURIComponent(search)}`;
+  const { data, loading, mutate } = useQuery(key, () => api.get<{ people: Person[] }>(key), {
+    keepPreviousData: true,
+  });
+  const people = data?.people ?? [];
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setLoading(true);
-      api.get<{ people: Person[] }>(`/network/people?q=${encodeURIComponent(query)}`)
-        .then((r) => setPeople(r.people)).finally(() => setLoading(false));
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [query]);
+  /** Patch one card in place, then let the pages that summarise connections
+   *  (notifications, messages) refresh themselves. */
+  function applyConnection(userId: string, connection: Person["connection"]) {
+    if (data) mutate({ ...data, people: data.people.map((p) => (p.userId === userId ? { ...p, connection } : p)) });
+    invalidateQueries("/network/connections");
+    invalidateQueries("/notifications");
+  }
 
   async function request(person: Person) {
     const { connection } = await api.post<{ connection: { id: string; status: string; requesterId: string } }>("/network/connections", { recipientId: person.userId });
-    setPeople((items) => items.map((p) => p.userId === person.userId ? { ...p, connection } : p));
+    applyConnection(person.userId, connection);
   }
 
   async function respond(person: Person, action: "ACCEPT" | "DECLINE") {
@@ -45,7 +50,7 @@ export function NetworkPage() {
       `/network/connections/${person.connection.id}`,
       { action },
     );
-    setPeople((items) => items.map((p) => p.userId === person.userId ? { ...p, connection } : p));
+    applyConnection(person.userId, connection);
   }
 
   return (

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Check, MessageCircle, Send, UserCheck, UserX } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
+import { MessageCircle, Send, UserCheck, UserX } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery, invalidateQueries } from "@/hooks/useQuery";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -22,36 +24,43 @@ interface ChatMessage { id: string; senderId: string; body: string; createdAt: s
 
 export function MessagesPage() {
   const { user } = useAuth();
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // The open thread lives in the URL so leaving Messages and coming back — or
+  // pressing Back — returns to the same conversation instead of resetting.
+  const [params, setParams] = useSearchParams();
   const [body, setBody] = useState("");
 
-  const loadLists = useCallback(async () => {
-    const [c, chats] = await Promise.all([
-      api.get<{ connections: Connection[] }>("/network/connections"),
-      api.get<{ conversations: Conversation[] }>("/network/conversations"),
-    ]);
-    setConnections(c.connections);
-    setConversations(chats.conversations);
-    setSelected((current) => current ?? chats.conversations[0]?.id ?? null);
-  }, []);
+  const connectionsQuery = useQuery("/network/connections", () => api.get<{ connections: Connection[] }>("/network/connections"));
+  const conversationsQuery = useQuery("/network/conversations", () => api.get<{ conversations: Conversation[] }>("/network/conversations"));
+  const connections = connectionsQuery.data?.connections ?? [];
+  const conversations = conversationsQuery.data?.conversations ?? [];
 
-  const loadMessages = useCallback(async () => {
+  const requested = params.get("thread");
+  const selected = conversations.some((c) => c.id === requested) ? requested : conversations[0]?.id ?? null;
+
+  function select(id: string) {
+    setParams({ thread: id });
+  }
+
+  const messagesKey = selected ? `/network/conversations/${selected}/messages` : null;
+  // staleTime 0: the poll and the realtime broadcast below both want a real
+  // refresh, while the cached thread still paints instantly on arrival.
+  const messagesQuery = useQuery(messagesKey, () => api.get<{ messages: ChatMessage[] }>(messagesKey!), { staleTime: 0 });
+  const messages = messagesQuery.data?.messages ?? [];
+
+  const loadMessages = messagesQuery.refetch;
+
+  useEffect(() => {
     if (!selected) return;
-    const result = await api.get<{ messages: ChatMessage[] }>(`/network/conversations/${selected}/messages`);
-    setMessages(result.messages);
     api.post(`/network/conversations/${selected}/read`).catch(() => undefined);
+    invalidateQueries("/notifications");
   }, [selected]);
 
-  useEffect(() => { loadLists(); }, [loadLists]);
   useEffect(() => {
-    loadMessages();
     if (!selected) return;
-    const timer = window.setInterval(loadMessages, 5000);
+    const refresh = () => void loadMessages();
+    const timer = window.setInterval(refresh, 5000);
     const channel = supabase?.channel(`conversation:${selected}`, { config: { private: true } })
-      .on("broadcast", { event: "message.created" }, loadMessages)
+      .on("broadcast", { event: "message.created" }, refresh)
       .subscribe();
     return () => {
       window.clearInterval(timer);
@@ -63,7 +72,8 @@ export function MessagesPage() {
 
   async function respond(id: string, action: "ACCEPT" | "DECLINE") {
     await api.patch(`/network/connections/${id}`, { action });
-    loadLists();
+    invalidateQueries("/network/");
+    invalidateQueries("/notifications");
   }
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -71,8 +81,8 @@ export function MessagesPage() {
     const text = body;
     setBody("");
     await api.post(`/network/conversations/${selected}/messages`, { body: text });
-    loadMessages();
-    loadLists();
+    await loadMessages();
+    void conversationsQuery.refetch();
   }
 
   return (
@@ -83,7 +93,7 @@ export function MessagesPage() {
         <aside className="border-b border-hairline md:border-b-0 md:border-r">
           <div className="border-b border-hairline p-4 text-sm font-semibold text-ink">Conversations</div>
           <div className="flex overflow-x-auto md:block md:max-h-[520px] md:overflow-y-auto">
-            {conversations.map((conversation) => <button key={conversation.id} onClick={() => setSelected(conversation.id)} className={cn("min-w-64 border-r border-hairline p-4 text-left tap-target md:block md:w-full md:min-w-0 md:border-b md:border-r-0", selected === conversation.id ? "bg-ink text-page" : "hover:bg-page")}><p className="truncate font-medium">{conversation.other.profile?.displayName ?? conversation.other.name}</p><p className={cn("mt-1 truncate text-xs", selected === conversation.id ? "text-page/70" : "text-ink-muted")}>{conversation.messages[0]?.body ?? "Start the conversation"}</p></button>)}
+            {conversations.map((conversation) => <button key={conversation.id} onClick={() => select(conversation.id)} className={cn("min-w-64 border-r border-hairline p-4 text-left tap-target md:block md:w-full md:min-w-0 md:border-b md:border-r-0", selected === conversation.id ? "bg-ink text-page" : "hover:bg-page")}><p className="truncate font-medium">{conversation.other.profile?.displayName ?? conversation.other.name}</p><p className={cn("mt-1 truncate text-xs", selected === conversation.id ? "text-page/70" : "text-ink-muted")}>{conversation.messages[0]?.body ?? "Start the conversation"}</p></button>)}
           </div>
         </aside>
         <section className="flex min-h-[420px] flex-col">

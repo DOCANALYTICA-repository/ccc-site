@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bell, Check, CheckCheck, ClipboardCheck, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery, invalidateQueries } from "@/hooks/useQuery";
 
 interface Notice {
   id: string;
@@ -26,31 +27,36 @@ interface ConnectionSummary {
 export function NotificationsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [items, setItems] = useState<Notice[]>([]);
+  const notices = useQuery("/notifications", () => api.get<{ notifications: Notice[] }>("/notifications"));
   // A CONNECTION_REQUEST notice keeps that type forever even after the
   // request has been accepted/declined (possibly from the People page in
   // another tab) — cross-check live connection status before showing
   // Accept/Decline so we never act on a request that's already resolved.
-  const [connections, setConnections] = useState<Record<string, ConnectionSummary>>({});
+  const conns = useQuery("/network/connections", () => api.get<{ connections: ConnectionSummary[] }>("/network/connections"));
   const [acting, setActing] = useState<string | null>(null);
 
+  const items = notices.data?.notifications ?? [];
+  const connections: Record<string, ConnectionSummary> = Object.fromEntries(
+    (conns.data?.connections ?? []).map((c) => [c.id, c]),
+  );
+
   async function load() {
-    const [{ notifications }, { connections: conns }] = await Promise.all([
-      api.get<{ notifications: Notice[] }>("/notifications"),
-      api.get<{ connections: ConnectionSummary[] }>("/network/connections"),
-    ]);
-    setItems(notifications);
-    setConnections(Object.fromEntries(conns.map((c) => [c.id, c])));
+    await Promise.all([notices.refetch(), conns.refetch()]);
   }
-  useEffect(() => { load(); }, []);
-  async function readAll() { await api.post("/notifications/read-all"); load(); }
+  async function readAll() {
+    await api.post("/notifications/read-all");
+    // Also clears the unread badge the shell keeps under /notifications?limit=1.
+    invalidateQueries("/notifications");
+  }
 
   async function markRead(item: Notice) {
     if (!item.readAt) await api.patch(`/notifications/${item.id}/read`);
   }
 
   function openNotice(item: Notice) {
-    markRead(item).then(load);
+    markRead(item).then(() => invalidateQueries("/notifications"));
+    // A survey notice carries its EVENT id, so it can open the form itself
+    // instead of falling through to the generic People redirect below.
     if (item.type === "SURVEY_OPENED" && item.entityId) {
       navigate(`/events/${item.entityId}/survey`);
       return;
@@ -67,6 +73,7 @@ export function NotificationsPage() {
       await api.patch(`/network/connections/${item.entityId}`, { action });
       await markRead(item);
       await load();
+      invalidateQueries("/network/people");
     } catch (err) {
       // Most likely someone else already accepted/declined this request
       // (or it was cancelled) between the notification loading and the click.

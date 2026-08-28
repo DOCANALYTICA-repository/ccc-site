@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { BookPlus, GraduationCap, Send } from "lucide-react";
 import { api } from "@/lib/api";
+import { useQuery, invalidateQueries, invalidateQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,29 +13,36 @@ type User = { id: string; name: string; phone: string | null; role: string };
 
 export function CoursesAdminPage() {
   const { push } = useToast();
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [catalogs, setCatalogs] = useState<Catalog[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const programsQuery = useQuery("/courses/admin/programs/list", () => api.get<{ programs: Program[] }>("/courses/admin/programs/list"));
+  const catalogsQuery = useQuery("/courses", () => api.get<{ catalogs: Catalog[] }>("/courses"));
+  const usersQuery = useQuery("/users", () => api.get<{ users: User[] }>("/users"));
+  const programs = programsQuery.data?.programs ?? [];
+  const catalogs = catalogsQuery.data?.catalogs ?? [];
+  const users = usersQuery.data?.users ?? [];
+
   const [selectedCatalog, setSelectedCatalog] = useState("");
-  const [courses, setCourses] = useState<Array<{ id: string; code: string; title: string }>>([]);
+  const coursesQuery = useQuery(
+    selectedCatalog ? `/courses/${selectedCatalog}` : null,
+    () => api.get<{ catalog: Catalog }>(`/courses/${selectedCatalog}`),
+  );
+  const courses = coursesQuery.data?.catalog.courses ?? [];
   const [program, setProgram] = useState({ name: "", code: "" });
   const [catalog, setCatalog] = useState({ programId: "", title: "", academicYear: "", version: "1.0", description: "" });
   const [course, setCourse] = useState({ code: "", title: "", semester: "1", credits: "", description: "" });
   const [module, setModule] = useState({ courseId: "", title: "", content: "" });
   const [grantUser, setGrantUser] = useState("");
 
-  async function load() {
-    const [p, c, u] = await Promise.all([
-      api.get<{ programs: Program[] }>("/courses/admin/programs/list"),
-      api.get<{ catalogs: Catalog[] }>("/courses"),
-      api.get<{ users: User[] }>("/users"),
-    ]);
-    setPrograms(p.programs); setCatalogs(c.catalogs); setUsers(u.users);
-    setCatalog((v) => ({ ...v, programId: v.programId || p.programs[0]?.id || "" }));
-  }
-  useEffect(() => { load(); }, []);
-  useEffect(() => { if (selectedCatalog) api.get<{ catalog: Catalog }>(`/courses/${selectedCatalog}`).then((r) => setCourses(r.catalog.courses ?? [])); }, [selectedCatalog]);
-  const done = (message: string) => { push(message, "success"); load(); };
+  // Default the catalog form to the first program once programs are known.
+  useEffect(() => {
+    const first = programs[0]?.id;
+    if (first) setCatalog((v) => (v.programId ? v : { ...v, programId: first }));
+  }, [programs]);
+
+  const done = (message: string) => {
+    push(message, "success");
+    invalidateQueries("/courses");
+    invalidateQuery("/users");
+  };
 
   async function addProgram(e: FormEvent) { e.preventDefault(); await api.post("/courses/admin/programs", program); setProgram({ name: "", code: "" }); done("Program created."); }
   async function addCatalog(e: FormEvent) { e.preventDefault(); await api.post("/courses/admin/catalogs", { ...catalog, description: catalog.description || null }); setCatalog((v) => ({ ...v, title: "", description: "" })); done("Catalog created."); }

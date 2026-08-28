@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import * as Tabs from "@radix-ui/react-tabs";
 import { api, ApiError } from "@/lib/api";
+import { useQuery, invalidateQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { cn } from "@/lib/cn";
 import type { Contact } from "@/lib/types";
@@ -21,7 +22,8 @@ export function WalkInDialog({
 }) {
   const { push } = useToast();
   const [mode, setMode] = useState<"existing" | "new">("existing");
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const { data } = useQuery("/contacts", () => api.get<{ contacts: Contact[] }>("/contacts"), { enabled: open });
+  const contacts = data?.contacts ?? [];
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -33,7 +35,6 @@ export function WalkInDialog({
 
   useEffect(() => {
     if (open) {
-      api.get<{ contacts: Contact[] }>("/contacts").then((d) => setContacts(d.contacts));
       setQuery("");
       setSelectedId(null);
       setFullName("");
@@ -60,6 +61,8 @@ export function WalkInDialog({
           : { mode: "new" as const, fullName, organization: organization || null, phone: phone || null };
 
       await api.post(`/events/${eventId}/walk-in`, body);
+      // A walk-in can create a directory entry, so the cached list is stale.
+      if (mode === "new") invalidateQuery("/contacts");
       push("Guest added and marked arrived.", "success");
       onAdded();
       onOpenChange(false);

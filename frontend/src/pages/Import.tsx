@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { api, downloadFile, downloadUrl } from "@/lib/api";
+import { useQuery, invalidateQueries } from "@/hooks/useQuery";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle, Micro } from "@/components/ui/Card";
 import {
@@ -85,7 +86,8 @@ export function Import() {
   const [rawRows, setRawRows] = useState<Record<number, unknown>[]>([]);
   const [rows, setRows] = useState<ParsedImportRow[]>([]);
   const [duplicateStrategy, setDuplicateStrategy] = useState<"SKIP" | "UPDATE" | "CREATE_ANYWAY">("SKIP");
-  const [events, setEvents] = useState<EventRecord[]>([]);
+  const eventsQuery = useQuery("/events", () => api.get<{ events: EventRecord[] }>("/events"));
+  const events = eventsQuery.data?.events ?? [];
   const [inviteToEventId, setInviteToEventId] = useState<string>("");
   const [committing, setCommitting] = useState(false);
   const [parsing, setParsing] = useState(false);
@@ -100,9 +102,6 @@ export function Import() {
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    api.get<{ events: EventRecord[] }>("/events").then((d) => setEvents(d.events));
-  }, []);
 
   async function onFileSelected(file: File) {
     setParsing(true);
@@ -215,6 +214,11 @@ export function Import() {
       });
       setResult(res);
       setStep("result");
+      // An import rewrites the directory and can add invitations, so drop the
+      // cached views of both rather than showing pre-import counts.
+      invalidateQueries("/contacts");
+      invalidateQueries("/events");
+      invalidateQueries("/dashboard");
     } finally {
       setCommitting(false);
     }

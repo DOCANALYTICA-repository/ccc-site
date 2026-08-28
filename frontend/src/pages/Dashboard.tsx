@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { Card, CardTitle, Micro } from "@/components/ui/Card";
 import type { EventRecord } from "@/lib/types";
 
@@ -14,11 +14,8 @@ interface Tile {
 }
 
 export function Dashboard() {
-  const [tiles, setTiles] = useState<Tile[] | null>(null);
-
-  useEffect(() => {
-    api.get<{ tiles: Tile[] }>("/dashboard").then((d) => setTiles(d.tiles));
-  }, []);
+  const { data, loading } = useQuery("/dashboard", () => api.get<{ tiles: Tile[] }>("/dashboard"));
+  const tiles = data?.tiles;
 
   return (
     <div className="space-y-6">
@@ -27,7 +24,7 @@ export function Dashboard() {
         <p className="text-sm text-ink-muted">Active and upcoming events at a glance.</p>
       </div>
 
-      {tiles === null && <p className="text-sm text-ink-muted">Loading…</p>}
+      {loading && <p className="text-sm text-ink-muted">Loading…</p>}
       {tiles?.length === 0 && (
         <Card>
           <p className="text-sm text-ink-muted">

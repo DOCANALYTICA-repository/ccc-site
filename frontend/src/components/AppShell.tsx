@@ -1,12 +1,14 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { Suspense, useEffect, useRef, type ComponentType } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Bell, BookOpen, CalendarDays, CircleUserRound, ContactRound, Home, LogOut, Menu, MessageCircle, Moon, Network, Sun, UsersRound } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { CccLogo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import { cn } from "@/lib/cn";
 import { api } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 
 interface NavItem { to: string; label: string; icon: ComponentType<{ className?: string }>; }
 
@@ -30,12 +32,40 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const location = useLocation();
-  const [unread, setUnread] = useState(0);
   const internal = user?.role === "ADMIN" || user?.role === "STAFF";
   const items = internal ? INTERNAL_ITEMS : COMMUNITY_ITEMS;
 
+  // The badge keeps its last value while this refreshes, so it never flickers
+  // back to zero on the way into a new tab.
+  const badge = useQuery("/notifications?limit=1", () => api.get<{ unread: number }>("/notifications?limit=1"));
+  const unread = badge.data?.unread ?? 0;
+
+  // The shell never unmounts, so nothing would revalidate this on its own.
+  // Navigation is the cue to re-check, throttled so a burst of tab switching
+  // doesn't turn into a request per click. Acting on a notification (or on a
+  // message) invalidates this key directly, so counts stay correct in between.
+  const refreshBadge = badge.refetch;
+  const badgeCheckedAt = useRef(Date.now());
   useEffect(() => {
-    api.get<{ unread: number }>("/notifications?limit=1").then((r) => setUnread(r.unread)).catch(() => undefined);
+    if (Date.now() - badgeCheckedAt.current < 20_000) return;
+    badgeCheckedAt.current = Date.now();
+    void refreshBadge();
+  }, [location.pathname, refreshBadge]);
+
+  // The page scrolls inside this element, not the document, so nothing resets
+  // it on navigation — without this you arrive at a new tab already scrolled
+  // to wherever the last one was. Remembering each tab's offset also means
+  // going back to a long list returns to the row you were reading.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const offsets = useRef(new Map<string, number>());
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const path = location.pathname;
+    el.scrollTop = offsets.current.get(path) ?? 0;
+    const remember = () => offsets.current.set(path, el.scrollTop);
+    el.addEventListener("scroll", remember, { passive: true });
+    return () => el.removeEventListener("scroll", remember);
   }, [location.pathname]);
 
   return (
@@ -75,8 +105,15 @@ export function AppShell() {
       <main className="flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <img src={`/brand/ccc-mark-${theme}.png`} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-contain p-10 opacity-[0.05] sm:p-16" />
-          <div className="relative h-full overflow-y-auto pb-24 sm:pb-0">
-            <div key={location.pathname} className="mx-auto w-full max-w-[1600px] animate-page-in px-4 py-5 sm:px-6 sm:py-6 lg:px-8"><Outlet /></div>
+          <div ref={scrollerRef} className="relative h-full overflow-y-auto pb-24 sm:pb-0">
+            <div key={location.pathname} className="mx-auto w-full max-w-[1600px] animate-page-in px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+              {/* Both boundaries live inside the shell so a slow chunk or a
+                  page-level crash swaps only the content area — the nav stays
+                  put and clickable, and no reload is needed to recover. */}
+              <RouteErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<p className="text-sm text-ink-muted">Loading…</p>}><Outlet /></Suspense>
+              </RouteErrorBoundary>
+            </div>
           </div>
         </div>
         <div className="shrink-0 pb-20 sm:pb-0"><Footer /></div>
