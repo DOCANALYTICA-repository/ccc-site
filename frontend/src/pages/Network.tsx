@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Building2, Check, Clock3, Search, UserPlus } from "lucide-react";
+import { Building2, Check, Clock3, Search, UserPlus, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Person {
   userId: string;
@@ -18,6 +19,7 @@ interface Person {
 }
 
 export function NetworkPage() {
+  const { user } = useAuth();
   const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -32,8 +34,17 @@ export function NetworkPage() {
   }, [query]);
 
   async function request(person: Person) {
-    await api.post("/network/connections", { recipientId: person.userId });
-    setPeople((items) => items.map((p) => p.userId === person.userId ? { ...p, connection: { id: "pending", status: "PENDING", requesterId: "self" } } : p));
+    const { connection } = await api.post<{ connection: { id: string; status: string; requesterId: string } }>("/network/connections", { recipientId: person.userId });
+    setPeople((items) => items.map((p) => p.userId === person.userId ? { ...p, connection } : p));
+  }
+
+  async function respond(person: Person, action: "ACCEPT" | "DECLINE") {
+    if (!person.connection) return;
+    const { connection } = await api.patch<{ connection: { id: string; status: string; requesterId: string } }>(
+      `/network/connections/${person.connection.id}`,
+      { action },
+    );
+    setPeople((items) => items.map((p) => p.userId === person.userId ? { ...p, connection } : p));
   }
 
   return (
@@ -51,7 +62,15 @@ export function NetworkPage() {
             {person.bio && <p className="mt-3 line-clamp-3 text-sm text-ink-muted">{person.bio}</p>}
             <div className="mt-auto pt-5">
               {!person.connection && <Button className="w-full" onClick={() => request(person)}><UserPlus className="h-4 w-4" aria-hidden />Connect</Button>}
-              {person.connection?.status === "PENDING" && <Button className="w-full" disabled variant="secondary"><Clock3 className="h-4 w-4" aria-hidden />Request pending</Button>}
+              {person.connection?.status === "PENDING" && person.connection.requesterId === user?.id && (
+                <Button className="w-full" disabled variant="secondary"><Clock3 className="h-4 w-4" aria-hidden />Request pending</Button>
+              )}
+              {person.connection?.status === "PENDING" && person.connection.requesterId !== user?.id && (
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={() => respond(person, "ACCEPT")}><Check className="h-4 w-4" aria-hidden />Accept</Button>
+                  <Button className="flex-1" variant="secondary" onClick={() => respond(person, "DECLINE")}><X className="h-4 w-4" aria-hidden />Decline</Button>
+                </div>
+              )}
               {person.connection?.status === "ACCEPTED" && <Button className="w-full" disabled variant="secondary"><Check className="h-4 w-4" aria-hidden />Connected</Button>}
             </div>
           </Card>
