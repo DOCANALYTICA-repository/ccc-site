@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Building2, Check, Clock3, Search, UserPlus, X } from "lucide-react";
+import { Building2, Check, Clock3, Linkedin, Mail, MessageCircle, Search, UserPlus, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -60,6 +61,22 @@ export function NetworkPage() {
             {person.designation && <p className="mt-3 text-sm font-medium text-ink">{person.designation}</p>}
             {person.headline && <p className="mt-1 text-sm text-ink-muted">{person.headline}</p>}
             {person.bio && <p className="mt-3 line-clamp-3 text-sm text-ink-muted">{person.bio}</p>}
+            {(person.publicEmail || person.linkedInUrl) && (
+              <div className="mt-3 space-y-1.5">
+                {person.publicEmail && (
+                  <a href={`mailto:${person.publicEmail}`} className="flex items-center gap-1.5 text-sm text-accent-ink hover:underline">
+                    <Mail className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="truncate">{person.publicEmail}</span>
+                  </a>
+                )}
+                {person.linkedInUrl && (
+                  <a href={person.linkedInUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-accent-ink hover:underline">
+                    <Linkedin className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="truncate">LinkedIn profile</span>
+                  </a>
+                )}
+              </div>
+            )}
             <div className="mt-auto pt-5">
               {!person.connection && <Button className="w-full" onClick={() => request(person)}><UserPlus className="h-4 w-4" aria-hidden />Connect</Button>}
               {person.connection?.status === "PENDING" && person.connection.requesterId === user?.id && (
@@ -71,7 +88,11 @@ export function NetworkPage() {
                   <Button className="flex-1" variant="secondary" onClick={() => respond(person, "DECLINE")}><X className="h-4 w-4" aria-hidden />Decline</Button>
                 </div>
               )}
-              {person.connection?.status === "ACCEPTED" && <Button className="w-full" disabled variant="secondary"><Check className="h-4 w-4" aria-hidden />Connected</Button>}
+              {person.connection?.status === "ACCEPTED" && (
+                <Link to="/messages">
+                  <Button className="w-full" variant="secondary"><MessageCircle className="h-4 w-4" aria-hidden />Message</Button>
+                </Link>
+              )}
             </div>
           </Card>
         ))}
