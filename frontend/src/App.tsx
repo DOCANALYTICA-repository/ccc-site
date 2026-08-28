@@ -39,7 +39,7 @@ export default function App() {
               </Route>
 
               {/* Gate check-in is its own full-screen layout — no AppShell chrome. */}
-              <Route element={<ProtectedRoute />}>
+              <Route element={<ProtectedRoute roles={["ADMIN", "STAFF"]} />}>
                 <Route path="/events/:id/gate" element={<GateCheckIn />} />
               </Route>
 
@@ -54,6 +54,13 @@ export default function App() {
                   <Route path="/notifications" element={<NotificationsPage />} />
                   <Route path="/check-in" element={<CheckInPage />} />
                   <Route path="/events/:id/survey" element={<EventSurveyPage />} />
+                </Route>
+              </Route>
+
+              {/* Internal staff tools — API rejects non-staff, and the route
+                  guard keeps the broken page shell from rendering at all. */}
+              <Route element={<ProtectedRoute roles={["ADMIN", "STAFF"]} />}>
+                <Route element={<AppShell />}>
                   <Route path="/admin" element={<AdminHub />} />
                   <Route path="/surveys-admin" element={<SurveysAdminPage />} />
                   <Route path="/courses-admin" element={<CoursesAdminPage />} />
