@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Check, CheckCheck, X } from "lucide-react";
+import { Bell, Check, CheckCheck, ClipboardCheck, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +51,10 @@ export function NotificationsPage() {
 
   function openNotice(item: Notice) {
     markRead(item).then(load);
+    if (item.type === "SURVEY_OPENED" && item.entityId) {
+      navigate(`/events/${item.entityId}/survey`);
+      return;
+    }
     // Anything besides a still-open connection request just links to People —
     // e.g. an already-accepted/declined request, or a message/invite notice.
     if (item.type !== "CONNECTION_REQUEST") navigate("/network");
@@ -87,6 +91,7 @@ export function NotificationsPage() {
           const conn = item.entityId ? connections[item.entityId] : undefined;
           const pendingRequest =
             item.type === "CONNECTION_REQUEST" && conn?.status === "PENDING" && conn.recipientId === user?.id;
+          const surveyOpened = item.type === "SURVEY_OPENED" && item.entityId;
           return (
             <Card
               key={item.id}
@@ -114,6 +119,16 @@ export function NotificationsPage() {
                       onClick={() => respond(item, "DECLINE")}
                     >
                       <X className="h-4 w-4" aria-hidden />Decline
+                    </Button>
+                  </div>
+                )}
+                {surveyOpened && (
+                  <div className="mt-3">
+                    <Button
+                      className="flex-1 sm:flex-none"
+                      onClick={(e) => { e.stopPropagation(); openNotice(item); }}
+                    >
+                      <ClipboardCheck className="h-4 w-4" aria-hidden />Open form
                     </Button>
                   </div>
                 )}

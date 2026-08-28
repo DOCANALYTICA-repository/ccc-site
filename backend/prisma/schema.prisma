@@ -57,6 +57,14 @@ enum SurveyStatus {
   CLOSED
 }
 
+enum SurveyQuestionType {
+  YES_NO
+  SINGLE_SELECT
+  MULTI_SELECT
+  TEXT
+  SCALE_1_5
+}
+
 enum NotificationType {
   EVENT_INVITATION
   CONNECTION_REQUEST
@@ -499,11 +507,14 @@ model SurveyTemplate {
 }
 
 model SurveyTemplateQuestion {
-  id         String         @id @default(uuid())
-  templateId String         @map("template_id")
-  template   SurveyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  id         String             @id @default(uuid())
+  templateId String             @map("template_id")
+  template   SurveyTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
   prompt     String
-  position   Int            @default(0)
+  type       SurveyQuestionType @default(YES_NO)
+  options    Json?
+  section    String?
+  position   Int                @default(0)
 
   @@index([templateId, position])
   @@map("survey_template_questions")
@@ -528,11 +539,14 @@ model EventSurvey {
 }
 
 model EventSurveyQuestion {
-  id       String         @id @default(uuid())
-  surveyId String         @map("survey_id")
-  survey   EventSurvey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  id       String             @id @default(uuid())
+  surveyId String             @map("survey_id")
+  survey   EventSurvey        @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   prompt   String
-  position Int            @default(0)
+  type     SurveyQuestionType @default(YES_NO)
+  options  Json?
+  section  String?
+  position Int                @default(0)
   answers  SurveyAnswer[]
 
   @@index([surveyId, position])
@@ -556,11 +570,14 @@ model SurveyResponse {
 }
 
 model SurveyAnswer {
-  responseId String              @map("response_id")
-  questionId String              @map("question_id")
-  response   SurveyResponse      @relation(fields: [responseId], references: [id], onDelete: Cascade)
-  question   EventSurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  value      Boolean
+  responseId      String              @map("response_id")
+  questionId      String              @map("question_id")
+  response        SurveyResponse      @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question        EventSurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value           Boolean?
+  textValue       String?             @map("text_value")
+  scaleValue      Int?                @map("scale_value")
+  selectedOptions Json?               @map("selected_options")
 
   @@id([responseId, questionId])
   @@map("survey_answers")
