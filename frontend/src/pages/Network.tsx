@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, Check, Clock3, Linkedin, Mail, MessageCircle, Search, UserPlus, X } from "lucide-react";
+import { Building2, Check, Clock3, ExternalLink, Mail, MessageCircle, Search, UserPlus, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
@@ -71,7 +71,7 @@ export function NetworkPage() {
                 )}
                 {person.linkedInUrl && (
                   <a href={person.linkedInUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-accent-ink hover:underline">
-                    <Linkedin className="h-4 w-4 shrink-0" aria-hidden />
+                    <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
                     <span className="truncate">LinkedIn profile</span>
                   </a>
                 )}
