@@ -1,4 +1,26 @@
 import { z } from "zod";
+import { parsePhoneNumberWithError } from "libphonenumber-js";
+
+/** E.164-normalizes a contact phone so one keyed in by hand ("9876500011")
+ * matches one that arrived through import ("+919876500011") on the
+ * duplicate-phone check. Only a *valid* number is rewritten; anything that
+ * doesn't parse cleanly (extensions, notes, partial numbers) is kept verbatim
+ * — a contact phone is free-form and optional, unlike a login identifier.
+ * Mirrors the import pipeline's importNormalize.tryParseOne. */
+function normalizeContactPhone(value: string): string {
+  try {
+    const num = parsePhoneNumberWithError(value, (process.env.DEFAULT_PHONE_REGION ?? "IN") as "IN");
+    return num.isValid() ? num.number : value;
+  } catch {
+    return value;
+  }
+}
+
+const phoneField = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((v) => (v ? normalizeContactPhone(v) : null));
 
 export const contactInputSchema = z.object({
   fullName: z.string().trim().min(1, "Name is required."),
@@ -7,8 +29,8 @@ export const contactInputSchema = z.object({
   profileUrl: z.string().trim().nullish(),
   email: z.string().trim().email().nullish().or(z.literal("").transform(() => null)),
   altEmail: z.string().trim().email().nullish().or(z.literal("").transform(() => null)),
-  phone: z.string().trim().nullish(),
-  altPhone: z.string().trim().nullish(),
+  phone: phoneField,
+  altPhone: phoneField,
   dietaryNotes: z.string().trim().nullish(),
   notes: z.string().trim().nullish(),
   tags: z.array(z.string().trim().min(1)).optional(),
@@ -37,7 +59,7 @@ export const walkInSchema = z.union([
     mode: z.literal("new"),
     fullName: z.string().trim().min(1),
     organization: z.string().trim().nullish(),
-    phone: z.string().trim().nullish(),
+    phone: phoneField,
     email: z.string().trim().email().nullish().or(z.literal("").transform(() => null)),
   }),
 ]);
