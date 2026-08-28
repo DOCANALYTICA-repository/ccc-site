@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Bell, BookOpen, CalendarCheck, MessageCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Dashboard } from "@/pages/Dashboard";
 import { api } from "@/lib/api";
+import { useQuery, invalidateQueries } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -30,16 +31,10 @@ export function Home() {
 function CommunityHome() {
   const { user } = useAuth();
   const { push } = useToast();
-  const [data, setData] = useState<{
+  const { data, loading, mutate } = useQuery("/community/home", () => api.get<{
     invitations: HomeInvitation[]; unreadNotifications: number; unreadMessages: number; catalogCount: number;
-  } | null>(null);
+  }>("/community/home"));
   const [respondingId, setRespondingId] = useState<string | null>(null);
-
-  async function load() {
-    setData(await api.get("/community/home"));
-  }
-
-  useEffect(() => { load(); }, []);
 
   async function respond(id: string, decision: "ACCEPT" | "DECLINE") {
     if (respondingId) return;
@@ -49,14 +44,17 @@ function CommunityHome() {
         `/community/invitations/${id}/respond`,
         { decision },
       );
-      setData((current) => current
-        ? {
-            ...current,
-            invitations: current.invitations.map((invitation) =>
-              invitation.id === id ? { ...invitation, status: result.invitation.status } : invitation,
-            ),
-          }
-        : current);
+      if (data) {
+        mutate({
+          ...data,
+          invitations: data.invitations.map((invitation) =>
+            invitation.id === id ? { ...invitation, status: result.invitation.status } : invitation,
+          ),
+        });
+      }
+      // The staff dashboard and this event's guest list now show stale counts.
+      invalidateQueries("/dashboard");
+      invalidateQueries("/events");
       push(decision === "ACCEPT" ? "Your attendance has been confirmed." : "Invitation declined.", "success");
     } catch (error) {
       push(error instanceof Error ? error.message : "We couldn't save your response. Please try again.", "error");
@@ -65,7 +63,8 @@ function CommunityHome() {
     }
   }
 
-  if (!data) return <p className="text-sm text-ink-muted">Loading your community home…</p>;
+  if (loading) return <p className="text-sm text-ink-muted">Loading your community home…</p>;
+  if (!data) return <p className="text-sm text-ink-muted">We couldn’t load your home just now.</p>;
   return (
     <div className="space-y-6">
       <header className="max-w-2xl">

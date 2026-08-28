@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
+import { useQuery, invalidateQueries } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -17,18 +18,25 @@ export function ProfilePage() {
   const { push } = useToast();
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
+  const { data, mutate } = useQuery("/network/profile", () => api.get<{ profile: NetworkProfile | null }>("/network/profile"));
 
+  // Seed the form from the first response only. A background refresh must not
+  // overwrite edits the user has already typed into these fields.
+  const seeded = useRef(false);
   useEffect(() => {
-    api.get<{ profile: NetworkProfile | null }>("/network/profile").then(({ profile }) => {
-      if (profile) setForm({ ...empty, ...profile });
-    });
-  }, []);
+    if (seeded.current || !data) return;
+    seeded.current = true;
+    if (data.profile) setForm({ ...empty, ...data.profile });
+  }, [data]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put("/network/profile", form);
+      const { profile } = await api.put<{ profile: NetworkProfile }>("/network/profile", form);
+      mutate({ profile });
+      // Directory visibility may have changed, so the People list is stale.
+      invalidateQueries("/network/people");
       push("Profile saved.", "success");
     } finally { setSaving(false); }
   }

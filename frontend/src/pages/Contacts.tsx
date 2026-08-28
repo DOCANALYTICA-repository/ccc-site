@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api, downloadFile } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -9,19 +10,11 @@ import type { Contact } from "@/lib/types";
 
 export function Contacts() {
   const { push } = useToast();
-  const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const { data, refetch: load } = useQuery("/contacts", () => api.get<{ contacts: Contact[] }>("/contacts"));
+  const contacts = data?.contacts ?? null;
   const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Contact | null>(null);
-
-  async function load() {
-    const { contacts } = await api.get<{ contacts: Contact[] }>("/contacts");
-    setContacts(contacts);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   // Whole directory in memory, filtered on every keystroke — see PLAN.md
   // section 5.1: under 100 rows, this is faster than round-tripping search.

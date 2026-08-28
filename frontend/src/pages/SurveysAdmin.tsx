@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { BarChart3, FileQuestion } from "lucide-react";
 import { api, downloadFile } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,17 +13,17 @@ interface Report { completion: { arrived: number; submitted: number; outstanding
 
 export function SurveysAdminPage() {
   const { push } = useToast();
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
+  const templatesQuery = useQuery("/surveys/templates", () => api.get<{ templates: Template[] }>("/surveys/templates"));
+  const eventsQuery = useQuery("/events", () => api.get<{ events: Event[] }>("/events"));
+  const templates = templatesQuery.data?.templates ?? [];
+  const events = eventsQuery.data?.events ?? [];
   const [name, setName] = useState("");
   const [questions, setQuestions] = useState("");
   const [eventId, setEventId] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("CCC relationship follow-up");
   const [report, setReport] = useState<Report | null>(null);
-  async function load() { const [t, e] = await Promise.all([api.get<{ templates: Template[] }>("/surveys/templates"), api.get<{ events: Event[] }>("/events")]); setTemplates(t.templates); setEvents(e.events); }
-  useEffect(() => { load(); }, []);
-  async function createTemplate(e: FormEvent) { e.preventDefault(); await api.post("/surveys/templates", { name, questions: questions.split("\n").map((q) => q.trim()).filter(Boolean) }); setName(""); setQuestions(""); push("Questionnaire template created.", "success"); load(); }
+  async function createTemplate(e: FormEvent) { e.preventDefault(); await api.post("/surveys/templates", { name, questions: questions.split("\n").map((q) => q.trim()).filter(Boolean) }); setName(""); setQuestions(""); push("Questionnaire template created.", "success"); void templatesQuery.refetch(); }
   async function attach(e: FormEvent) { e.preventDefault(); await api.post(`/surveys/events/${eventId}/attach`, { templateId, title }); push("Questionnaire attached to event.", "success"); }
   async function status(value: "OPEN" | "CLOSED") { await api.patch(`/surveys/events/${eventId}/status`, { status: value }); push(value === "OPEN" ? "Questionnaire is now open." : "Questionnaire closed.", "success"); }
   async function viewReport() { setReport(await api.get<Report>(`/surveys/events/${eventId}/report`)); }

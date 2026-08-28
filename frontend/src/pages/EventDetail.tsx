@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import * as Tabs from "@radix-ui/react-tabs";
 import { api, downloadFile, ApiError } from "@/lib/api";
+import { useQuery, invalidateQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -35,8 +36,14 @@ export function EventDetail() {
   const navigate = useNavigate();
   const { push } = useToast();
 
-  const [event, setEvent] = useState<EventRecord | null>(null);
-  const [invitations, setInvitations] = useState<Invitation[] | null>(null);
+  const eventQuery = useQuery(id ? `/events/${id}` : null, () => api.get<{ event: EventRecord }>(`/events/${id}`));
+  const invitesQuery = useQuery(
+    id ? `/events/${id}/invitations` : null,
+    () => api.get<{ invitations: Invitation[] }>(`/events/${id}/invitations`),
+  );
+  const event = eventQuery.data?.event ?? null;
+  const invitations = invitesQuery.data?.invitations ?? null;
+
   const [tab, setTab] = useState<"ALL" | InvitationStatus>("ALL");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -44,19 +51,15 @@ export function EventDetail() {
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [checkInToken, setCheckInToken] = useState("");
 
+  const refreshEvent = eventQuery.refetch;
+  const refreshInvites = invitesQuery.refetch;
   const load = useCallback(async () => {
-    if (!id) return;
-    const [eventRes, invRes] = await Promise.all([
-      api.get<{ event: EventRecord }>(`/events/${id}`),
-      api.get<{ invitations: Invitation[] }>(`/events/${id}/invitations`),
-    ]);
-    setEvent(eventRes.event);
-    setInvitations(invRes.invitations);
-  }, [id]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+    await Promise.all([refreshEvent(), refreshInvites()]);
+    // The events list and dashboard summarise these same counts. Exact keys
+    // only — a prefix sweep would re-invalidate what we just refetched.
+    invalidateQuery("/events");
+    invalidateQuery("/dashboard");
+  }, [refreshEvent, refreshInvites]);
 
   useEffect(() => {
     if (!checkInOpen || !id) return;
@@ -90,9 +93,15 @@ export function EventDetail() {
 
   const alreadyInvitedIds = useMemo(() => new Set(invitations?.map((i) => i.contactId) ?? []), [invitations]);
 
+  /** Optimistic edit written straight into the cached guest list. */
+  const patchInvitations = (update: (list: Invitation[]) => Invitation[]) => {
+    const current = invitesQuery.data;
+    if (current) invitesQuery.mutate({ invitations: update(current.invitations) });
+  };
+
   async function setStatus(invId: string, status: InvitationStatus) {
     // Optimistic update — see PLAN.md section 7 / 5.5.
-    setInvitations((prev) => prev?.map((i) => (i.id === invId ? { ...i, status } : i)) ?? null);
+    patchInvitations((list) => list.map((i) => (i.id === invId ? { ...i, status } : i)));
     try {
       await api.patch(`/events/${id}/invitations/${invId}/status`, { status });
     } catch (err) {
@@ -104,7 +113,7 @@ export function EventDetail() {
   async function bulkSetStatus(status: InvitationStatus) {
     if (selected.size === 0) return;
     const ids = Array.from(selected);
-    setInvitations((prev) => prev?.map((i) => (ids.includes(i.id) ? { ...i, status } : i)) ?? null);
+    patchInvitations((list) => list.map((i) => (ids.includes(i.id) ? { ...i, status } : i)));
     setSelected(new Set());
     try {
       await api.post(`/events/${id}/invitations/bulk-status`, { invitationIds: ids, status });

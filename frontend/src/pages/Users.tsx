@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
@@ -21,19 +22,11 @@ interface StaffUser {
 export function Users() {
   const { user: me } = useAuth();
   const { push } = useToast();
-  const [users, setUsers] = useState<StaffUser[] | null>(null);
+  const { data, refetch: load } = useQuery("/users", () => api.get<{ users: StaffUser[] }>("/users"));
+  const users = data?.users;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
   const [linkDialog, setLinkDialog] = useState<{ title: string; link: string } | null>(null);
-
-  async function load() {
-    const { users } = await api.get<{ users: StaffUser[] }>("/users");
-    setUsers(users);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   async function toggleActive(u: StaffUser) {
     if (u.id === me?.id) return;

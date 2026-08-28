@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
+import { clearQueryCache } from "@/lib/queryCache";
 import type { AuthedUser } from "@/lib/types";
 
 interface AuthContextValue {
@@ -35,6 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(identifier: string, password: string) {
     const { user } = await api.post<{ user: AuthedUser }>("/auth/login", { identifier, password });
+    // Whatever the previous session cached belongs to a different account.
+    clearQueryCache();
     setUser(user);
   }
 
@@ -45,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function logout() {
     await api.post("/auth/logout");
+    clearQueryCache();
     setUser(null);
   }
 

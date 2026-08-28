@@ -3,6 +3,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { api } from "@/lib/api";
+import { useQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import type { Contact } from "@/lib/types";
 
@@ -20,7 +21,10 @@ export function InviteDrawer({
   onInvited: () => void;
 }) {
   const { push } = useToast();
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  // Shares the "/contacts" cache entry with the Contacts page, so opening this
+  // drawer right after browsing the directory needs no request at all.
+  const { data } = useQuery("/contacts", () => api.get<{ contacts: Contact[] }>("/contacts"), { enabled: open });
+  const contacts = data?.contacts ?? [];
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [arrivalAt, setArrivalAt] = useState("");
@@ -28,7 +32,6 @@ export function InviteDrawer({
 
   useEffect(() => {
     if (open) {
-      api.get<{ contacts: Contact[] }>("/contacts").then((d) => setContacts(d.contacts));
       setSelected(new Set());
       setQuery("");
       setArrivalAt("");
