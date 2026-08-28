@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { BarChart3, FileQuestion, Plus, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { BarChart3, ChevronDown, ChevronUp, FileQuestion, Pencil, Plus, Trash2, X } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
 import { useQuery } from "@/hooks/useQuery";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
@@ -26,7 +26,14 @@ interface DraftQuestion {
   section: string;
 }
 
-interface Template { id: string; name: string; questions: Array<{ id: string; prompt: string; type: QuestionType }> }
+interface TemplateQuestion {
+  id: string;
+  prompt: string;
+  type: QuestionType;
+  options: string[] | null;
+  section: string | null;
+}
+interface Template { id: string; name: string; questions: TemplateQuestion[] }
 interface Event { id: string; name: string }
 
 // Only the bits this screen needs — the full per-question breakdown is the
@@ -53,6 +60,8 @@ export function SurveysAdminPage() {
   const [title, setTitle] = useState("CCC relationship follow-up");
   const [report, setReport] = useState<Report | null>(null);
   const [saving, setSaving] = useState(false);
+  // null = building a new template; an id = editing that existing one.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Default to the first event so the status and action buttons aren't dead on
   // arrival — an unselected dropdown reads as "the questionnaire is missing".
@@ -82,8 +91,52 @@ export function SurveysAdminPage() {
   function removeOption(qIndex: number, oIndex: number) {
     setDraftQuestions((qs) => qs.map((q, i) => i === qIndex ? { ...q, options: q.options.filter((_, j) => j !== oIndex) } : q));
   }
+  /** Move a question one slot up or down; questions are stored positionally. */
+  function moveQuestion(index: number, delta: number) {
+    setDraftQuestions((qs) => {
+      const target = index + delta;
+      if (target < 0 || target >= qs.length) return qs;
+      const next = [...qs];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
-  async function createTemplate(e: FormEvent) {
+  /** Load an existing template into the builder for editing. */
+  function editTemplate(template: Template) {
+    setEditingId(template.id);
+    setName(template.name);
+    setDraftQuestions(
+      template.questions.map((q) => ({
+        prompt: q.prompt,
+        type: q.type,
+        options: q.options ?? [],
+        section: q.section ?? "",
+      })),
+    );
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setName("");
+    setDraftQuestions([emptyQuestion()]);
+  }
+
+  async function deleteTemplate(template: Template) {
+    if (!confirm(`Delete "${template.name}"? This can't be undone.`)) return;
+    try {
+      await api.delete(`/surveys/templates/${template.id}`);
+      if (editingId === template.id) cancelEdit();
+      push("Template deleted.", "success");
+      void templatesQuery.refetch();
+    } catch (err) {
+      // The API refuses to delete a template that's attached to an event.
+      push(err instanceof ApiError ? err.message : "Couldn't delete that template.", "error");
+    }
+  }
+
+  async function saveTemplate(e: FormEvent) {
     e.preventDefault();
     const needsOptions = (t: QuestionType) => t === "SINGLE_SELECT" || t === "MULTI_SELECT";
     const cleaned = draftQuestions
@@ -101,13 +154,17 @@ export function SurveysAdminPage() {
     }
     setSaving(true);
     try {
-      await api.post("/surveys/templates", { name, questions: cleaned });
-      setName("");
-      setDraftQuestions([emptyQuestion()]);
-      push("Questionnaire template created.", "success");
+      if (editingId) {
+        await api.put(`/surveys/templates/${editingId}`, { name, questions: cleaned });
+        push("Template updated. Re-attach it to apply the changes to an event.", "success");
+      } else {
+        await api.post("/surveys/templates", { name, questions: cleaned });
+        push("Questionnaire template created.", "success");
+      }
+      cancelEdit();
       void templatesQuery.refetch();
-    } catch {
-      push("Couldn't create template — check the questions above.", "error");
+    } catch (err) {
+      push(err instanceof ApiError ? err.message : "Couldn't save — check the questions above.", "error");
     } finally {
       setSaving(false);
     }
@@ -141,11 +198,26 @@ export function SurveysAdminPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <FileQuestion className="h-5 w-5 text-accent-ink" aria-hidden />
-            <h2 className="font-semibold text-ink">New reusable template</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <FileQuestion className="h-5 w-5 text-accent-ink" aria-hidden />
+              <h2 className="font-semibold text-ink">
+                {editingId ? "Edit template" : "New reusable template"}
+              </h2>
+            </div>
+            {editingId && (
+              <Button type="button" variant="ghost" size="sm" onClick={cancelEdit}>
+                <X className="h-4 w-4" aria-hidden />Cancel edit
+              </Button>
+            )}
           </div>
-          <form className="space-y-4" onSubmit={createTemplate}>
+          {editingId && (
+            <p className="mb-4 rounded-control bg-page p-3 text-xs text-ink-muted">
+              Events that already use this template keep the questions they were attached with —
+              re-attach the template to an event to apply these edits there.
+            </p>
+          )}
+          <form className="space-y-4" onSubmit={saveTemplate}>
             <div>
               <Label htmlFor="templateName">Template name</Label>
               <Input id="templateName" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -200,9 +272,27 @@ export function SurveysAdminPage() {
                         </div>
                       )}
                     </div>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => removeQuestion(i)} aria-label="Remove question">
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                    </Button>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        disabled={i === 0}
+                        onClick={() => moveQuestion(i, -1)}
+                        aria-label={`Move question ${i + 1} up`}
+                      >
+                        <ChevronUp className="h-4 w-4" aria-hidden />
+                      </Button>
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        disabled={i === draftQuestions.length - 1}
+                        onClick={() => moveQuestion(i, 1)}
+                        aria-label={`Move question ${i + 1} down`}
+                      >
+                        <ChevronDown className="h-4 w-4" aria-hidden />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeQuestion(i)} aria-label={`Remove question ${i + 1}`}>
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -211,8 +301,49 @@ export function SurveysAdminPage() {
               </Button>
             </div>
 
-            <Button type="submit" disabled={saving}>{saving ? "Creating…" : "Create template"}</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : editingId ? "Save changes" : "Create template"}
+              </Button>
+              {editingId && (
+                <Button type="button" variant="secondary" onClick={cancelEdit}>Cancel</Button>
+              )}
+            </div>
           </form>
+
+          <div className="mt-5 border-t border-hairline pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Existing templates ({templates.length})
+            </h3>
+            <ul className="mt-2 space-y-1.5">
+              {templates.map((template) => (
+                <li
+                  key={template.id}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-control p-2.5 ${
+                    editingId === template.id ? "bg-page ring-1 ring-ink/15" : "bg-page"
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{template.name}</p>
+                    <p className="text-xs text-ink-muted">{template.questions.length} questions</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button type="button" variant="secondary" size="sm" onClick={() => editTemplate(template)}>
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />Edit
+                    </Button>
+                    <Button
+                      type="button" variant="ghost" size="sm"
+                      onClick={() => deleteTemplate(template)}
+                      aria-label={`Delete ${template.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+              {!templates.length && <li className="py-3 text-sm text-ink-muted">No templates yet.</li>}
+            </ul>
+          </div>
         </Card>
 
         <Card className="p-5">

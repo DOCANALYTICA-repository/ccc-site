@@ -168,6 +168,67 @@ surveysRouter.post("/templates", async (req, res) => {
   res.status(201).json({ template });
 });
 
+/**
+ * Replace a template's name and question list.
+ *
+ * Editing a template deliberately does NOT touch any EventSurvey already
+ * created from it: attaching snapshots the questions onto the event, so a
+ * live form's wording can never shift under guests who are mid-response, and
+ * answers already collected stay tied to the questions that were actually
+ * asked. Re-attach the template to pick up an edit on a future event.
+ */
+surveysRouter.put("/templates/:id", async (req, res) => {
+  const parsed = z.object({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).nullish(),
+    questions: z.array(templateQuestionSchema).min(1).max(100),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid template." });
+  const existing = await prisma.surveyTemplate.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "Template not found." });
+  const template = await prisma.$transaction(async (tx) => {
+    // Questions are positional and have no identity of their own outside the
+    // template, so replacing the set wholesale is simpler — and safer — than
+    // trying to diff prompts back onto rows the editor may have reordered.
+    await tx.surveyTemplateQuestion.deleteMany({ where: { templateId: req.params.id } });
+    return tx.surveyTemplate.update({
+      where: { id: req.params.id },
+      data: {
+        name: parsed.data.name,
+        description: parsed.data.description,
+        questions: {
+          create: parsed.data.questions.map((q, position) => ({
+            prompt: q.prompt,
+            type: q.type,
+            options: q.options ?? undefined,
+            section: q.section ?? undefined,
+            position,
+          })),
+        },
+      },
+      include: { questions: { orderBy: { position: "asc" } } },
+    });
+  });
+  res.json({ template });
+});
+
+surveysRouter.delete("/templates/:id", async (req, res) => {
+  const template = await prisma.surveyTemplate.findUnique({
+    where: { id: req.params.id },
+    include: { _count: { select: { eventSurveys: true } } },
+  });
+  if (!template) return res.status(404).json({ error: "Template not found." });
+  // Attached surveys keep their own snapshot, but they also keep a templateId
+  // reference — refuse rather than orphan an event's questionnaire.
+  if (template._count.eventSurveys > 0) {
+    return res.status(409).json({
+      error: `This template is attached to ${template._count.eventSurveys} event${template._count.eventSurveys === 1 ? "" : "s"} and can't be deleted.`,
+    });
+  }
+  await prisma.surveyTemplate.delete({ where: { id: req.params.id } });
+  res.status(204).end();
+});
+
 surveysRouter.post("/events/:eventId/attach", async (req, res) => {
   const parsed = z.object({ templateId: z.string().uuid(), title: z.string().trim().min(1).max(240) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid survey." });

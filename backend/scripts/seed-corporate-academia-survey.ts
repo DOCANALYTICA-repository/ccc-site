@@ -183,10 +183,38 @@ const questions: Q[] = [
   },
 
   // Section 12: Final Question
+  //
+  // The closing section shifts from the organisation to the person answering.
+  // Everything above asks what the organisation will commit to; these ask what
+  // the individual would personally enjoy — which is often where the real
+  // opening is, since someone whose employer said "not at present" may still
+  // be glad to teach a session or mentor a student themselves.
   {
     section: "Final Question",
     prompt: "Please share any additional suggestions or collaboration opportunities that you would like us to explore.",
     type: "TEXT",
+  },
+  {
+    section: "Final Question",
+    prompt: "Beyond your organisation's formal commitments, how would you personally like to stay connected with Christ University?",
+    type: "MULTI_SELECT",
+    options: [
+      "Guest lecture or talk", "Mentoring students", "Judging competitions or events",
+      "Career guidance sessions", "Serving on a panel", "Sharing industry openings",
+      "Alumni or industry network", "Supporting a student club or centre",
+      "Cultural, sports or arts activities", "Not at present", "Other",
+    ],
+  },
+  {
+    section: "Final Question",
+    prompt: "Which topics or personal interests would you most enjoy sharing with students?",
+    type: "TEXT",
+  },
+  {
+    section: "Final Question",
+    prompt: "Realistically, how much time could you personally give over a year?",
+    type: "SINGLE_SELECT",
+    options: ["A one-off session", "Two or three times a year", "Once a quarter", "Monthly or more", "Prefer not to commit yet"],
   },
 ];
 
