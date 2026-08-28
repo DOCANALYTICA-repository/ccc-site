@@ -4,6 +4,7 @@ import { Bell, BookOpen, CalendarCheck, MessageCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Dashboard } from "@/pages/Dashboard";
 import { api } from "@/lib/api";
+import { useToast } from "@/hooks/useToast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 
@@ -28,9 +29,11 @@ export function Home() {
 
 function CommunityHome() {
   const { user } = useAuth();
+  const { push } = useToast();
   const [data, setData] = useState<{
     invitations: HomeInvitation[]; unreadNotifications: number; unreadMessages: number; catalogCount: number;
   } | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
   async function load() {
     setData(await api.get("/community/home"));
@@ -39,8 +42,27 @@ function CommunityHome() {
   useEffect(() => { load(); }, []);
 
   async function respond(id: string, decision: "ACCEPT" | "DECLINE") {
-    await api.patch(`/community/invitations/${id}/respond`, { decision });
-    load();
+    if (respondingId) return;
+    setRespondingId(id);
+    try {
+      const result = await api.patch<{ invitation: { status: HomeInvitation["status"] } }>(
+        `/community/invitations/${id}/respond`,
+        { decision },
+      );
+      setData((current) => current
+        ? {
+            ...current,
+            invitations: current.invitations.map((invitation) =>
+              invitation.id === id ? { ...invitation, status: result.invitation.status } : invitation,
+            ),
+          }
+        : current);
+      push(decision === "ACCEPT" ? "Your attendance has been confirmed." : "Invitation declined.", "success");
+    } catch (error) {
+      push(error instanceof Error ? error.message : "We couldn't save your response. Please try again.", "error");
+    } finally {
+      setRespondingId(null);
+    }
   }
 
   if (!data) return <p className="text-sm text-ink-muted">Loading your community home…</p>;
@@ -68,10 +90,24 @@ function CommunityHome() {
                   <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-accent-ink">{inv.status.replaceAll("_", " ")}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {inv.status !== "ARRIVED_IN_CAMPUS" && <>
-                    <Button size="sm" onClick={() => respond(inv.id, "ACCEPT")}>Accept</Button>
-                    <Button size="sm" variant="secondary" onClick={() => respond(inv.id, "DECLINE")}>Decline</Button>
+                  {inv.status === "UNCONFIRMED" && <>
+                    <Button size="sm" disabled={respondingId === inv.id} onClick={() => respond(inv.id, "ACCEPT")}>
+                      {respondingId === inv.id ? "Saving…" : "Accept"}
+                    </Button>
+                    <Button size="sm" variant="secondary" disabled={respondingId === inv.id} onClick={() => respond(inv.id, "DECLINE")}>
+                      Decline
+                    </Button>
                   </>}
+                  {inv.status === "CONFIRMED" && (
+                    <span className="rounded-control bg-status-confirmed-bg px-3 py-2 text-xs font-semibold text-status-confirmed-fg">
+                      Accepted
+                    </span>
+                  )}
+                  {inv.status === "DECLINED" && (
+                    <span className="rounded-control bg-page px-3 py-2 text-xs font-semibold text-ink-muted">
+                      Declined
+                    </span>
+                  )}
                   {inv.status === "CONFIRMED" && <Link to="/check-in"><Button size="sm" variant="secondary">Check in</Button></Link>}
                   {inv.status === "ARRIVED_IN_CAMPUS" && inv.event.survey?.status === "OPEN" && (
                     <Link to={`/events/${inv.event.id}/survey`}><Button size="sm">Complete form</Button></Link>

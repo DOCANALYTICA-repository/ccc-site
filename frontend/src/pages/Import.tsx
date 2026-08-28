@@ -32,6 +32,52 @@ const FIELD_OPTIONS: { value: FieldKey; label: string }[] = [
   { value: "ignore", label: "— Ignore —" },
 ];
 
+function cellText(value: unknown): string {
+  if (value && typeof value === "object" && "text" in value) return String((value as { text: unknown }).text);
+  if (value && typeof value === "object" && "result" in value) return String((value as { result: unknown }).result ?? "");
+  return value == null ? "" : String(value);
+}
+
+// Small RFC 4180-compatible parser for browser-side CSV imports. It handles
+// quoted commas, escaped quotes, and CRLF files without adding another bundle.
+function parseCsv(input: string): string[][] {
+  const table: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    if (quoted) {
+      if (char === '"' && input[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        field += char;
+      }
+    } else if (char === '"' && field === "") {
+      quoted = true;
+    } else if (char === "," || char === "\t") {
+      row.push(field);
+      field = "";
+    } else if (char === "\n" || char === "\r") {
+      if (char === "\r" && input[i + 1] === "\n") i++;
+      row.push(field);
+      if (row.some((value) => value.trim())) table.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  if (field || row.length) {
+    row.push(field);
+    if (row.some((value) => value.trim())) table.push(row);
+  }
+  return table;
+}
+
 export function Import() {
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
@@ -42,6 +88,8 @@ export function Import() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [inviteToEventId, setInviteToEventId] = useState<string>("");
   const [committing, setCommitting] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     batchId: string;
     created: number;
@@ -57,38 +105,59 @@ export function Import() {
   }, []);
 
   async function onFileSelected(file: File) {
+    setParsing(true);
+    setParseError(null);
     setFilename(file.name);
-    const buffer = await file.arrayBuffer();
-    // Lazy-loaded — ExcelJS is ~1MB and only the Import page needs it.
-    const { default: ExcelJS } = await import("exceljs");
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer);
-    const ws = wb.worksheets[0];
-    if (!ws) return;
+    try {
+      let headers: string[];
+      let collected: Record<number, unknown>[];
 
-    const headerRow = ws.getRow(1);
-    const detected: DetectedColumn[] = [];
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const header = String(cell.value ?? "").trim();
-      if (!header) return;
-      detected.push({ index: colNumber, header, field: guessFieldForHeader(header) });
-    });
-    setColumns(detected);
+      if (/\.csv$/i.test(file.name)) {
+        const text = await file.text();
+        const table = parseCsv(text);
+        headers = table[0] ?? [];
+        collected = table.slice(1).map((values) =>
+          Object.fromEntries(values.map((value, index) => [index + 1, value])),
+        );
+      } else if (/\.xlsx$/i.test(file.name)) {
+        // Lazy-loaded — ExcelJS is ~1MB and only the Import page needs it.
+        const { default: ExcelJS } = await import("exceljs");
+        const wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(await file.arrayBuffer());
+        const ws = wb.worksheets[0];
+        if (!ws) throw new Error("The workbook does not contain a worksheet.");
+        headers = [];
+        ws.getRow(1).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          headers[colNumber - 1] = cellText(cell.value);
+        });
+        collected = [];
+        // Scan the used range and drop empty rows; some exports report a much
+        // larger used range than their actual contact list.
+        ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber === 1) return;
+          const values: Record<number, unknown> = {};
+          row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+            values[colNumber] = cell.value;
+          });
+          if (Object.keys(values).length > 0) collected.push(values);
+        });
+      } else {
+        throw new Error("Please choose a .csv or .xlsx file.");
+      }
 
-    const collected: Record<number, unknown>[] = [];
-    // Scan every row in the sheet's used range; blank rows are dropped in
-    // buildRows below rather than trusted as a real row count — the source
-    // file reported 989 rows for 45 real ones. See PLAN.md section 3.
-    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return;
-      const values: Record<number, unknown> = {};
-      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-        values[colNumber] = cell.value;
-      });
-      if (Object.keys(values).length > 0) collected.push(values);
-    });
-    setRawRows(collected);
-    setStep("mapping");
+      const detected = headers
+        .map((header, index) => ({ index: index + 1, header: header.trim(), field: guessFieldForHeader(header) }))
+        .filter((column) => column.header);
+      if (!detected.length) throw new Error("The first row must contain contact column headers.");
+      setColumns(detected);
+      setRawRows(collected);
+      setStep("mapping");
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : "This file could not be parsed.");
+      setStep("upload");
+    } finally {
+      setParsing(false);
+    }
   }
 
   function buildRows(cols: DetectedColumn[]) {
@@ -157,6 +226,7 @@ export function Import() {
     setRawRows([]);
     setRows([]);
     setResult(null);
+    setParseError(null);
     if (fileInput.current) fileInput.current.value = "";
   }
 
@@ -188,13 +258,15 @@ export function Import() {
           <input
             ref={fileInput}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.csv"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) onFileSelected(f);
             }}
             className="tap-target block w-full rounded-control border border-dashed border-hairline bg-page px-4 py-8 text-center text-sm text-ink-muted"
           />
+          {parsing && <p className="mt-3 text-sm text-ink-muted">Reading {filename}…</p>}
+          {parseError && <p className="mt-3 text-sm text-accent-ink">{parseError}</p>}
           <p className="mt-3 text-xs text-ink-muted">
             Recognized columns: {FIELD_OPTIONS.filter((f) => f.value !== "ignore").map((f) => f.label).join(", ")}.
             Column headers don't need to match exactly — close names are auto-matched, and anything else can be
