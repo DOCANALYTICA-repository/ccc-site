@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ClipboardCheck } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
@@ -35,6 +35,7 @@ export function EventSurveyPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState<SurveyData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,8 @@ export function EventSurveyPage() {
         if (value !== undefined) initial[a.questionId] = value;
       }
       setAnswers(initial);
+    }).catch((err) => {
+      setLoadError(err instanceof ApiError ? err.message : "Couldn't load the questionnaire.");
     });
   }, [id]);
 
@@ -93,6 +96,17 @@ export function EventSurveyPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-md space-y-3 py-16 text-center">
+        <ClipboardCheck className="mx-auto h-8 w-8 text-ink-muted" aria-hidden />
+        <h1 className="text-xl font-semibold text-ink">Questionnaire isn't open right now</h1>
+        <p className="text-sm text-ink-muted">{loadError}</p>
+        <p className="text-sm text-ink-muted">Check back later, or ask event staff when it'll reopen.</p>
+      </div>
+    );
   }
 
   if (!data) return <p className="text-sm text-ink-muted">Loading questionnaire…</p>;
