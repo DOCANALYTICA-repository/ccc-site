@@ -43,6 +43,7 @@ interface ReportQuestion {
 }
 
 interface Report {
+  survey: { id: string; title: string; status: "DRAFT" | "OPEN" | "CLOSED" };
   completion: { arrived: number; submitted: number; outstanding: number };
   questions: ReportQuestion[];
 }
@@ -70,8 +71,17 @@ export function SurveysAdminPage() {
     ]);
     setTemplates(t.templates);
     setEvents(e.events);
+    setEventId((current) => current || e.events[0]?.id || "");
   }
   useEffect(() => { load(); }, []);
+
+  // Auto-load the report whenever the selected event has an attached
+  // survey, so "not seeing anything" isn't the default first impression —
+  // the admin doesn't have to know to click "View report" first.
+  useEffect(() => {
+    if (!eventId) { setReport(null); return; }
+    api.get<Report>(`/surveys/events/${eventId}/report`).then(setReport).catch(() => setReport(null));
+  }, [eventId]);
 
   function updateQuestion(index: number, patch: Partial<DraftQuestion>) {
     setDraftQuestions((qs) => qs.map((q, i) => (i === index ? { ...q, ...patch } : q)));
@@ -118,16 +128,24 @@ export function SurveysAdminPage() {
     }
   }
 
+  async function viewReport() {
+    try {
+      setReport(await api.get<Report>(`/surveys/events/${eventId}/report`));
+    } catch {
+      setReport(null);
+    }
+  }
   async function attach(e: FormEvent) {
     e.preventDefault();
     await api.post(`/surveys/events/${eventId}/attach`, { templateId, title });
     push("Questionnaire attached to event.", "success");
+    viewReport();
   }
   async function status(value: "OPEN" | "CLOSED") {
     await api.patch(`/surveys/events/${eventId}/status`, { status: value });
     push(value === "OPEN" ? "Questionnaire is now open." : "Questionnaire closed.", "success");
+    viewReport();
   }
-  async function viewReport() { setReport(await api.get<Report>(`/surveys/events/${eventId}/report`)); }
 
   return (
     <div className="space-y-6">
@@ -224,7 +242,7 @@ export function SurveysAdminPage() {
                 required
                 className="h-11 w-full rounded-control border bg-surface px-3 text-sm"
                 value={eventId}
-                onChange={(e) => { setEventId(e.target.value); setReport(null); }}
+                onChange={(e) => setEventId(e.target.value)}
               >
                 <option value="">Select event</option>
                 {events.map((event) => <option key={event.id} value={event.id}>{event.name}</option>)}
@@ -248,11 +266,21 @@ export function SurveysAdminPage() {
             </div>
             <Button type="submit">Attach snapshot</Button>
           </form>
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-hairline pt-4">
-            <Button disabled={!eventId} onClick={() => status("OPEN")}>Open form</Button>
-            <Button disabled={!eventId} variant="secondary" onClick={() => status("CLOSED")}>Close form</Button>
-            <Button disabled={!eventId} variant="secondary" onClick={viewReport}>View report</Button>
-            <Button disabled={!eventId} variant="secondary" onClick={() => downloadFile(`/surveys/events/${eventId}/export.csv`, "survey-responses.csv")}>Export CSV</Button>
+          <div className="mt-4 border-t border-hairline pt-4">
+            {eventId && (
+              <p className="mb-3 text-sm text-ink-muted">
+                Status:{" "}
+                <span className="font-semibold text-ink">
+                  {report ? report.survey.status : "No questionnaire attached yet"}
+                </span>
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={!eventId || !report} onClick={() => status("OPEN")}>Open form</Button>
+              <Button disabled={!eventId || !report} variant="secondary" onClick={() => status("CLOSED")}>Close form</Button>
+              <Button disabled={!eventId || !report} variant="secondary" onClick={viewReport}>Refresh report</Button>
+              <Button disabled={!eventId || !report} variant="secondary" onClick={() => downloadFile(`/surveys/events/${eventId}/export.csv`, "survey-responses.csv")}>Export CSV</Button>
+            </div>
           </div>
         </Card>
       </div>
