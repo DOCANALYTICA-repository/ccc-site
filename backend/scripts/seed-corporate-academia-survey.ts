@@ -184,11 +184,11 @@ const questions: Q[] = [
 
   // Section 12: Final Question
   //
-  // The closing section shifts from the organisation to the person answering.
-  // Everything above asks what the organisation will commit to; these ask what
-  // the individual would personally enjoy — which is often where the real
-  // opening is, since someone whose employer said "not at present" may still
-  // be glad to teach a session or mentor a student themselves.
+  // The closing section shifts from the organisation to the person answering,
+  // and drops the corporate register with it — these read like a conversation
+  // at the end of the event rather than more form-filling. That's deliberate:
+  // someone whose employer said "not at present" may still be glad to teach a
+  // session or mentor a student, and they'll only say so if asked like a human.
   {
     section: "Final Question",
     prompt: "Please share any additional suggestions or collaboration opportunities that you would like us to explore.",
@@ -196,25 +196,25 @@ const questions: Q[] = [
   },
   {
     section: "Final Question",
-    prompt: "Beyond your organisation's formal commitments, how would you personally like to stay connected with Christ University?",
+    prompt: "Forget the org for a second — what would you personally enjoy doing with our students?",
     type: "MULTI_SELECT",
     options: [
-      "Guest lecture or talk", "Mentoring students", "Judging competitions or events",
-      "Career guidance sessions", "Serving on a panel", "Sharing industry openings",
-      "Alumni or industry network", "Supporting a student club or centre",
-      "Cultural, sports or arts activities", "Not at present", "Other",
+      "Come talk to a class", "Mentor a student", "Judge a competition",
+      "Help students figure out careers", "Sit on a panel", "Pass along job openings",
+      "Stay in touch through our network", "Back a student club or centre",
+      "Something on the sports, music or arts side", "Nothing right now", "Something else",
     ],
   },
   {
     section: "Final Question",
-    prompt: "Which topics or personal interests would you most enjoy sharing with students?",
+    prompt: "What are you into — at work or outside it — that students would love to hear about?",
     type: "TEXT",
   },
   {
     section: "Final Question",
-    prompt: "Realistically, how much time could you personally give over a year?",
+    prompt: "Be honest — how much time could you actually spare in a year?",
     type: "SINGLE_SELECT",
-    options: ["A one-off session", "Two or three times a year", "Once a quarter", "Monthly or more", "Prefer not to commit yet"],
+    options: ["Just one session", "A couple of times a year", "Every few months", "Once a month or more", "Ask me later"],
   },
 ];
 

@@ -69,6 +69,14 @@ export function SurveysAdminPage() {
     setEventId((current) => current || events[0]?.id || "");
   }, [events]);
 
+  // Same for the template picker — it drives the "Edit questions" button, so
+  // leaving it blank would make that button dead until someone touched it.
+  useEffect(() => {
+    setTemplateId((current) => current || templates[0]?.id || "");
+  }, [templates]);
+
+  const selectedTemplate = templates.find((t) => t.id === templateId) ?? null;
+
   // Auto-load the report whenever the selected event has an attached
   // survey, so "not seeing anything" isn't the default first impression —
   // the admin doesn't have to know to click "View report" first.
@@ -395,6 +403,15 @@ export function SurveysAdminPage() {
               <Button disabled={!eventId || !report} onClick={() => status("OPEN")}>Open form</Button>
               <Button disabled={!eventId || !report} variant="secondary" onClick={() => status("CLOSED")}>Close form</Button>
               <Button disabled={!eventId || !report} variant="secondary" onClick={viewReport}>Refresh status</Button>
+              {/* Edits the template chosen above, not the event's attached
+                  snapshot — so it stays usable before anything is attached. */}
+              <Button
+                variant="secondary"
+                disabled={!selectedTemplate}
+                onClick={() => selectedTemplate && editTemplate(selectedTemplate)}
+              >
+                <Pencil className="h-4 w-4" aria-hidden />Edit questions
+              </Button>
             </div>
           </div>
         </Card>
