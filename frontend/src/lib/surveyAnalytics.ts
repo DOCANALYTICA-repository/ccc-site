@@ -27,6 +27,11 @@ export interface Respondent {
   readiness: number;
   wantsContact: boolean;
   preferredContactMode: string | null;
+  /** Seating from the event's grouping sheet; null for anyone not on it. */
+  tableNumber: number | null;
+  tableLabel: string | null;
+  programmeFocus: string | null;
+  seniorityBand: string | null;
   answers: Record<string, AnswerValue>;
 }
 
@@ -50,6 +55,8 @@ export interface QuestionReport extends QuestionAggregate {
   breakdowns: {
     byIndustry: Array<QuestionAggregate & { segment: string; total: number }>;
     byRole: Array<QuestionAggregate & { segment: string; total: number }>;
+    byTable: Array<QuestionAggregate & { segment: string; total: number }>;
+    byProgramme: Array<QuestionAggregate & { segment: string; total: number }>;
   };
 }
 
@@ -67,7 +74,13 @@ export interface Analytics {
   completion: { arrived: number; submitted: number; outstanding: number; rate: number };
   headline: { avgInterest: number; avgReadiness: number; wantsContact: number; organisations: number; industries: number; roles: number };
   questions: QuestionReport[];
-  segments: { industries: SegmentSummary[]; roles: SegmentSummary[]; organisations: SegmentSummary[] };
+  segments: {
+    industries: SegmentSummary[];
+    roles: SegmentSummary[];
+    organisations: SegmentSummary[];
+    tables: SegmentSummary[];
+    programmes: SegmentSummary[];
+  };
   derived: {
     sectionEngagement: Array<{ section: string; score: number; questions: number }>;
     partnershipDemand: Array<{ option: string; count: number }>;
@@ -77,6 +90,19 @@ export interface Analytics {
       interest: number | null; readiness: number; wantsContact: boolean; preferredContactMode: string | null;
     }>;
     timeline: Array<{ day: string; count: number }>;
+    /** Every table on the seating plan, including ones nobody answered from. */
+    tableParticipation: Array<{
+      tableLabel: string;
+      tableNumber: number;
+      programmeFocus: string | null;
+      seated: number;
+      responded: number;
+      rate: number;
+      avgInterest: number;
+      avgReadiness: number;
+      wantsContact: number;
+      topInterests: Array<{ option: string; count: number }>;
+    }>;
   };
   respondents: Respondent[];
   readinessDistribution: Array<{ band: string; count: number }>;
@@ -86,6 +112,8 @@ export interface Filters {
   industries: string[];
   roles: string[];
   organisations: string[];
+  tables: string[];
+  programmes: string[];
   minInterest: number;
   wantsContactOnly: boolean;
   text: string;
@@ -95,6 +123,8 @@ export const EMPTY_FILTERS: Filters = {
   industries: [],
   roles: [],
   organisations: [],
+  tables: [],
+  programmes: [],
   minInterest: 0,
   wantsContactOnly: false,
   text: "",
@@ -105,6 +135,8 @@ export function activeFilterCount(filters: Filters): number {
     filters.industries.length +
     filters.roles.length +
     filters.organisations.length +
+    filters.tables.length +
+    filters.programmes.length +
     (filters.minInterest > 0 ? 1 : 0) +
     (filters.wantsContactOnly ? 1 : 0) +
     (filters.text.trim() ? 1 : 0)
@@ -118,10 +150,12 @@ export function applyFilters(respondents: Respondent[], filters: Filters): Respo
     if (filters.industries.length && !filters.industries.includes(r.industry)) return false;
     if (filters.roles.length && !filters.roles.includes(r.role)) return false;
     if (filters.organisations.length && !filters.organisations.includes(r.organization?.trim() || "Not recorded")) return false;
+    if (filters.tables.length && !filters.tables.includes(r.tableLabel ?? "Not seated")) return false;
+    if (filters.programmes.length && !filters.programmes.includes(r.programmeFocus ?? "Not recorded")) return false;
     if (filters.minInterest > 0 && (r.interest ?? 0) < filters.minInterest) return false;
     if (filters.wantsContactOnly && !r.wantsContact) return false;
     if (needle) {
-      const haystack = [r.name, r.organization, r.designation, r.email, r.industry, r.role, ...r.tags]
+      const haystack = [r.name, r.organization, r.designation, r.email, r.industry, r.role, r.tableLabel, r.programmeFocus, ...r.tags]
         .filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(needle)) return false;
     }

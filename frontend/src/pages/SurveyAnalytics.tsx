@@ -13,6 +13,7 @@ import { AnalyticsBlock, InlineSelect } from "@/components/surveys/AnalyticsBloc
 import { FilterBar } from "@/components/surveys/FilterBar";
 import { RespondentDetail } from "@/components/surveys/RespondentDetail";
 import { RespondentTable } from "@/components/surveys/RespondentTable";
+import { CardChart } from "@/components/surveys/CardChart";
 import {
   aggregateQuestion,
   applyFilters,
@@ -33,7 +34,7 @@ import {
 } from "@/lib/surveyAnalytics";
 
 type Tab = "analytics" | "responses";
-type Breakdown = "none" | "industry" | "role";
+type Breakdown = "none" | "industry" | "role" | "table" | "programme";
 
 interface EventOption { id: string; name: string }
 
@@ -81,6 +82,38 @@ export function SurveyAnalyticsPage() {
   useEffect(() => {
     setEventId((current) => current || events[0]?.id || "");
   }, [events]);
+
+  // Warn before leaving with pins that were never saved. Two guards are
+  // needed: the browser one covers closing the tab or a hard reload, and the
+  // in-app one covers clicking another route, which never unloads the page.
+  useEffect(() => {
+    if (!dirty) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      // Browsers show their own wording; returning a string is what arms it.
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function onClick(e: MouseEvent) {
+      const link = (e.target as HTMLElement | null)?.closest("a");
+      const href = link?.getAttribute("href");
+      // Only guard in-app navigation away from this screen; the dashboard
+      // link is where an admin naturally goes to check their selection.
+      if (!href || !href.startsWith("/")) return;
+      if (href.startsWith("/survey-analytics") || href.startsWith("/analytics-dashboard")) return;
+      if (!window.confirm("You have unsaved dashboard changes. Leave without saving?")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [dirty]);
 
   function setTab(next: Tab) {
     const updated = new URLSearchParams(params);
@@ -133,6 +166,10 @@ export function SurveyAnalyticsPage() {
       industries: unique(data?.respondents.map((r) => r.industry) ?? []),
       roles: unique(data?.respondents.map((r) => r.role) ?? []),
       organisations: unique(data?.respondents.map((r) => r.organization?.trim() || "Not recorded") ?? []),
+      // Tables sort numerically so "Table 10" follows "Table 9".
+      tables: unique(data?.respondents.map((r) => r.tableLabel ?? "Not seated") ?? [])
+        .sort((a, b) => (parseInt(a.replace(/\D/g, ""), 10) || 999) - (parseInt(b.replace(/\D/g, ""), 10) || 999)),
+      programmes: unique(data?.respondents.map((r) => r.programmeFocus ?? "Not recorded") ?? []),
     };
   }, [data]);
 
@@ -194,6 +231,8 @@ export function SurveyAnalyticsPage() {
             industries={options.industries}
             roles={options.roles}
             organisations={options.organisations}
+            tables={options.tables}
+            programmes={options.programmes}
             matched={filtered.length}
             total={data.respondents.length}
           />
@@ -550,6 +589,81 @@ function AnalyticsTab({
       ),
     },
     {
+      id: "table",
+      keywords: ["table", "seating", "group", "grouping", "table wise", "per table", "how is each table"],
+      node: (
+        <AnalyticsBlock
+          id="table"
+          pinned={pinned.includes("table")}
+          onTogglePin={() => onTogglePin("table")}
+          title="By table"
+          subtitle="How each table at the event responded."
+        >
+          <CardChart cardKey="table" data={data} subset={subset} />
+        </AnalyticsBlock>
+      ),
+    },
+    {
+      id: "tableParticipation",
+      keywords: ["table participation", "response rate", "who has not answered", "seated", "coverage", "table"],
+      node: (
+        <AnalyticsBlock
+          id="tableParticipation"
+          pinned={pinned.includes("tableParticipation")}
+          onTogglePin={() => onTogglePin("tableParticipation")}
+          title="Table participation"
+          subtitle="Response rate per table, counted against everyone seated there — including tables yet to reply."
+        >
+          <CardChart cardKey="tableParticipation" data={data} subset={subset} />
+        </AnalyticsBlock>
+      ),
+    },
+    {
+      id: "tableReadiness",
+      keywords: ["table readiness", "readiness by table", "which table is most interested", "table"],
+      node: (
+        <AnalyticsBlock
+          id="tableReadiness"
+          pinned={pinned.includes("tableReadiness")}
+          onTogglePin={() => onTogglePin("tableReadiness")}
+          title="Table readiness"
+          subtitle="Average collaboration readiness per table."
+        >
+          <CardChart cardKey="tableReadiness" data={data} subset={subset} />
+        </AnalyticsBlock>
+      ),
+    },
+    {
+      id: "programme",
+      keywords: ["programme", "program", "course", "bcom", "mcom", "bsc", "focus", "degree"],
+      node: (
+        <AnalyticsBlock
+          id="programme"
+          pinned={pinned.includes("programme")}
+          onTogglePin={() => onTogglePin("programme")}
+          title="By programme focus"
+          subtitle="Response by the programme each table was themed around."
+        >
+          <CardChart cardKey="programme" data={data} subset={subset} />
+        </AnalyticsBlock>
+      ),
+    },
+    {
+      id: "seniority",
+      keywords: ["seniority", "band", "founder", "c-suite", "director", "level", "grade"],
+      node: (
+        <AnalyticsBlock
+          id="seniority"
+          pinned={pinned.includes("seniority")}
+          onTogglePin={() => onTogglePin("seniority")}
+          title="By seniority band"
+          subtitle="The banding the organisers assigned on the seating plan, rather than a guess from job titles."
+        >
+          <CardChart cardKey="seniority" data={data} subset={subset} />
+        </AnalyticsBlock>
+      ),
+    },
+    {
       id: "timeline",
       keywords: ["timeline", "over time", "when", "submissions", "uptake", "trend", "daily"],
       node: (
@@ -638,6 +752,8 @@ function AnalyticsTab({
           <Button disabled={!dirty || savingPins} onClick={onSavePins}>
             {savingPins ? "Saving…" : "Save dashboard"}
           </Button>
+          {/* Deliberately not guarded: going to look at the dashboard is the
+              natural next step, and the banner already says what is unsaved. */}
           <Link to={`/analytics-dashboard?event=${eventId}`}>
             <Button variant="secondary">
               <LayoutDashboard className="h-4 w-4" aria-hidden />Open dashboard
@@ -677,6 +793,8 @@ function AnalyticsTab({
                 { value: "none" as Breakdown, label: "Nothing" },
                 { value: "industry" as Breakdown, label: "Industry" },
                 { value: "role" as Breakdown, label: "Role" },
+                { value: "table" as Breakdown, label: "Table" },
+                { value: "programme" as Breakdown, label: "Programme" },
               ]}
               onChange={setBreakdown}
             />
@@ -768,7 +886,10 @@ function QuestionBreakdown({
 }: { question: QuestionReport; subset: Respondent[]; by: Exclude<Breakdown, "none"> }) {
   const groups = new Map<string, Respondent[]>();
   for (const respondent of subset) {
-    const key = by === "industry" ? respondent.industry : respondent.role;
+    const key = by === "industry" ? respondent.industry
+      : by === "role" ? respondent.role
+      : by === "table" ? (respondent.tableLabel ?? "Not seated")
+      : (respondent.programmeFocus ?? "Not recorded");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(respondent);
   }
@@ -799,7 +920,7 @@ function QuestionBreakdown({
   return (
     <div className="mt-4 border-t border-hairline pt-4">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-        Split by {by === "industry" ? "industry" : "role"}
+        Split by {by}
       </p>
       <StackedBar rows={rows} keys={keys} />
     </div>

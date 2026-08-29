@@ -179,6 +179,7 @@ model Contact {
   deletedAt    DateTime?         @map("deleted_at")
   tags         ContactTag[]
   invitations  EventInvitation[]
+  seatings     EventSeating[]
 
   @@index([email])
   @@index([phone])
@@ -222,6 +223,7 @@ model Event {
   checkInSessions EventCheckInSession[]
   survey          EventSurvey?
   dashboardCards  AnalyticsDashboardCard[]
+  seatings        EventSeating[]
 
   @@map("events")
 }
@@ -673,4 +675,35 @@ model AnalyticsDashboardCard {
   @@unique([userId, eventId, cardKey])
   @@index([userId, eventId, position])
   @@map("analytics_dashboard_cards")
+}
+
+
+/// Which table a guest was seated at, and the programme that table was themed
+/// around. Imported from the event's grouping sheet.
+///
+/// Deliberately analytics-only: nothing in check-in, invitations or messaging
+/// reads this. It exists so the questionnaire results can be cut by table —
+/// "how is table 4 responding" — and by the programme each table was built
+/// around, neither of which the questionnaire itself asks about.
+///
+/// `seniorityBand` is the banding the organisers assigned on that sheet
+/// ("5. VP / Senior Director"). It is far better evidence than guessing from a
+/// free-text designation, so analytics prefers it and falls back to the
+/// keyword classifier only for guests missing from the sheet.
+model EventSeating {
+  id            String   @id @default(uuid())
+  eventId       String   @map("event_id")
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contactId     String   @map("contact_id")
+  contact       Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tableNumber   Int      @map("table_number")
+  tableLabel    String   @map("table_label")
+  programmeFocus String? @map("programme_focus")
+  seniorityBand String?  @map("seniority_band")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventId, contactId])
+  @@index([eventId, tableNumber])
+  @@map("event_seatings")
 }

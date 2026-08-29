@@ -12,7 +12,7 @@ function question(partial: Partial<QuestionReport>): QuestionReport {
   return {
     id: "q1", prompt: "Prompt", type: "SINGLE_SELECT", section: "Section",
     options: ["Yes", "No"],
-    breakdowns: { byIndustry: [], byRole: [] },
+    breakdowns: { byIndustry: [], byRole: [], byTable: [], byProgramme: [] },
     ...partial,
   };
 }
@@ -25,6 +25,7 @@ function respondent(partial: Partial<Respondent>): Respondent {
     submittedAt: "2026-08-01T10:00:00.000Z",
     industry: "Banking", role: "Head / Lead",
     interest: 4, readiness: 70, wantsContact: true, preferredContactMode: "Email",
+    tableNumber: 1, tableLabel: "Table 1", programmeFocus: "BCOM (AFA)", seniorityBand: "VP / Senior Director",
     answers: {},
     ...partial,
   };
@@ -48,6 +49,7 @@ const RESPONDENTS: Respondent[] = [
   respondent({
     responseId: "b", name: "Bala Iyer", industry: "Consulting", role: "Manager",
     organization: "Acme Advisory", interest: 2, readiness: 30, wantsContact: false, preferredContactMode: "Phone",
+    tableNumber: 2, tableLabel: "Table 2", programmeFocus: "MCOM", seniorityBand: "Manager",
     submittedAt: "2026-08-02T10:00:00.000Z",
     answers: { qSingle: "Not at present", qMulti: ["Finance"], qScale: 2, qYesNo: false, qText: "" },
   }),
@@ -58,12 +60,16 @@ const DATA: Analytics = {
   completion: { arrived: 4, submitted: 2, outstanding: 2, rate: 50 },
   headline: { avgInterest: 3.5, avgReadiness: 60, wantsContact: 1, organisations: 2, industries: 2, roles: 2 },
   questions: QUESTIONS,
-  segments: { industries: [], roles: [], organisations: [] },
+  segments: { industries: [], roles: [], organisations: [], tables: [], programmes: [] },
   derived: {
     sectionEngagement: [{ section: "Section", score: 75, questions: 5 }],
     partnershipDemand: [],
     hotLeads: [],
     timeline: [],
+    tableParticipation: [
+      { tableLabel: "Table 1", tableNumber: 1, programmeFocus: "BCOM (AFA)", seated: 5, responded: 2, rate: 40, avgInterest: 3.5, avgReadiness: 60, wantsContact: 1, topInterests: [] },
+      { tableLabel: "Table 2", tableNumber: 2, programmeFocus: "MCOM", seated: 4, responded: 0, rate: 0, avgInterest: 0, avgReadiness: 0, wantsContact: 0, topInterests: [] },
+    ],
   },
   respondents: RESPONDENTS,
   readinessDistribution: [],
@@ -163,5 +169,48 @@ describe("CardChart — degrades safely", () => {
   it("renders a question chart with no answers", () => {
     render(<CardChart cardKey={questionCardKey("qSingle")} data={DATA} subset={[]} />);
     expect(screen.getByText("Yes, definitely")).toBeInTheDocument();
+  });
+});
+
+
+describe("CardChart — seating charts", () => {
+  it("groups respondents by table", () => {
+    render(<CardChart cardKey="table" data={DATA} subset={RESPONDENTS} />);
+    expect(screen.getByText("Table 1")).toBeInTheDocument();
+    expect(screen.getByText("Table 2")).toBeInTheDocument();
+  });
+
+  it("shows participation against everyone seated, including a silent table", () => {
+    render(<CardChart cardKey="tableParticipation" data={DATA} subset={RESPONDENTS} />);
+    expect(screen.getByText("2/5 · 40%")).toBeInTheDocument();
+    // A table nobody has answered from is the most useful row on the board.
+    expect(screen.getByText("0/4 · 0%")).toBeInTheDocument();
+  });
+
+  it("says so when no seating plan has been imported", () => {
+    const noSeating = { ...DATA, derived: { ...DATA.derived, tableParticipation: [] } };
+    render(<CardChart cardKey="tableParticipation" data={noSeating} subset={RESPONDENTS} />);
+    expect(screen.getByText("No seating plan has been imported for this event.")).toBeInTheDocument();
+  });
+
+  it("charts readiness per table", () => {
+    render(<CardChart cardKey="tableReadiness" data={DATA} subset={RESPONDENTS} />);
+    expect(screen.getByText("Table 1")).toBeInTheDocument();
+  });
+
+  it("groups by programme focus and seniority band", () => {
+    const { unmount } = render(<CardChart cardKey="programme" data={DATA} subset={RESPONDENTS} />);
+    expect(screen.getByText("BCOM (AFA)")).toBeInTheDocument();
+    unmount();
+    render(<CardChart cardKey="seniority" data={DATA} subset={RESPONDENTS} />);
+    expect(screen.getByText("VP / Senior Director")).toBeInTheDocument();
+  });
+
+  it("renders the seating charts with nobody seated", () => {
+    for (const key of ["table", "programme", "seniority", "tableReadiness"]) {
+      const { container, unmount } = render(<CardChart cardKey={key} data={DATA} subset={[]} />);
+      expect(container).not.toBeEmptyDOMElement();
+      unmount();
+    }
   });
 });

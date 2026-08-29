@@ -16,8 +16,12 @@ import {
   questionAggregateFor,
   questionCardKey,
   questionIdFromCardKey,
+  programmeRows,
   readinessBands,
+  seniorityRows,
+  sortTableRows,
   submissionTimeline,
+  tableRows,
 } from "./analyticsCards";
 import type { Analytics, QuestionReport, Respondent } from "./surveyAnalytics";
 
@@ -29,6 +33,7 @@ function respondent(partial: Partial<Respondent>): Respondent {
     submittedAt: "2026-08-01T10:00:00.000Z",
     industry: "Banking", role: "Head / Lead",
     interest: 4, readiness: 70, wantsContact: false, preferredContactMode: null,
+    tableNumber: 1, tableLabel: "Table 1", programmeFocus: "BCOM (AFA)", seniorityBand: "VP / Senior Director",
     answers: {},
     ...partial,
   };
@@ -37,7 +42,7 @@ function respondent(partial: Partial<Respondent>): Respondent {
 function question(partial: Partial<QuestionReport>): QuestionReport {
   return {
     id: "q1", prompt: "Prompt", type: "MULTI_SELECT", section: "S", options: ["A", "B"],
-    breakdowns: { byIndustry: [], byRole: [] },
+    breakdowns: { byIndustry: [], byRole: [], byTable: [], byProgramme: [] },
     ...partial,
   };
 }
@@ -72,7 +77,10 @@ describe("availableCards", () => {
   });
 
   it("never offers the written-answers block", () => {
-    expect(BLOCK_CARDS.some((c) => c.key === "text")).toBe(false);
+    // Widened to string: BLOCK_CARDS is `as const`, so comparing the literal
+    // union against "text" directly is a compile error rather than a check.
+    const keys: string[] = BLOCK_CARDS.map((c) => c.key);
+    expect(keys).not.toContain("text");
   });
 });
 
@@ -255,5 +263,68 @@ describe("questionAggregateFor", () => {
   it("returns null for a block key or a question that no longer exists", () => {
     expect(questionAggregateFor("industry", data, [])).toBeNull();
     expect(questionAggregateFor(questionCardKey("missing"), data, [])).toBeNull();
+  });
+});
+
+
+describe("seating derivations", () => {
+  const seated = [
+    respondent({ tableLabel: "Table 1", tableNumber: 1, programmeFocus: "BCOM (AFA)", seniorityBand: "C-Suite (functional)", readiness: 80, interest: 5, wantsContact: true }),
+    respondent({ tableLabel: "Table 1", tableNumber: 1, programmeFocus: "BCOM (AFA)", seniorityBand: "Manager", readiness: 40, interest: 3 }),
+    respondent({ tableLabel: "Table 2", tableNumber: 2, programmeFocus: "MCOM", seniorityBand: "C-Suite (functional)", readiness: 60, interest: 4 }),
+    // Someone who answered but was never on the grouping sheet.
+    respondent({ tableLabel: null, tableNumber: null, programmeFocus: null, seniorityBand: null, role: "Analyst / Associate", readiness: 20, interest: 1 }),
+  ];
+
+  it("groups respondents by table with averages", () => {
+    const rows = tableRows(seated);
+    const t1 = rows.find((r) => r.segment === "Table 1")!;
+    expect(t1.count).toBe(2);
+    expect(t1.avgReadiness).toBe(60);
+    expect(t1.avgInterest).toBe(4);
+    expect(t1.wantsContact).toBe(1);
+  });
+
+  it("buckets an unseated respondent rather than dropping them", () => {
+    const rows = tableRows(seated);
+    expect(rows.find((r) => r.segment === "Not seated")?.count).toBe(1);
+    // Every respondent must appear exactly once across the groups.
+    expect(rows.reduce((sum, r) => sum + r.count, 0)).toBe(seated.length);
+  });
+
+  it("groups by programme focus", () => {
+    const rows = programmeRows(seated);
+    expect(rows.find((r) => r.segment === "BCOM (AFA)")?.count).toBe(2);
+    expect(rows.find((r) => r.segment === "MCOM")?.count).toBe(1);
+    expect(rows.find((r) => r.segment === "Not recorded")?.count).toBe(1);
+  });
+
+  it("prefers the sheet seniority band and falls back to the classified role", () => {
+    const rows = seniorityRows(seated);
+    expect(rows.find((r) => r.segment === "C-Suite (functional)")?.count).toBe(2);
+    // The unseated respondent has no band, so their classified role is used.
+    expect(rows.find((r) => r.segment === "Analyst / Associate")?.count).toBe(1);
+  });
+
+  it("sorts tables numerically, not alphabetically", () => {
+    const rows = [
+      { segment: "Table 10", count: 1, avgInterest: 0, avgReadiness: 0, wantsContact: 0 },
+      { segment: "Table 2", count: 1, avgInterest: 0, avgReadiness: 0, wantsContact: 0 },
+      { segment: "Table 1", count: 1, avgInterest: 0, avgReadiness: 0, wantsContact: 0 },
+    ];
+    expect(sortTableRows(rows).map((r) => r.segment)).toEqual(["Table 1", "Table 2", "Table 10"]);
+  });
+
+  it("puts a non-numeric bucket last rather than first", () => {
+    const rows = [
+      { segment: "Not seated", count: 1, avgInterest: 0, avgReadiness: 0, wantsContact: 0 },
+      { segment: "Table 3", count: 1, avgInterest: 0, avgReadiness: 0, wantsContact: 0 },
+    ];
+    expect(sortTableRows(rows)[0].segment).toBe("Table 3");
+  });
+
+  it("returns nothing for an empty subset", () => {
+    expect(tableRows([])).toEqual([]);
+    expect(programmeRows([])).toEqual([]);
   });
 });

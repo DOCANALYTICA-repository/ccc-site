@@ -44,6 +44,11 @@ export const BLOCK_CARDS = [
   { key: "leads", title: "Priority follow-ups", description: "Who to contact first." },
   { key: "contactability", title: "Contact preferences", description: "How respondents want to be reached." },
   { key: "timeline", title: "Submissions over time", description: "Uptake by day." },
+  { key: "table", title: "By table", description: "How each table at the event responded." },
+  { key: "tableParticipation", title: "Table participation", description: "Response rate per table, including tables yet to reply." },
+  { key: "tableReadiness", title: "Table readiness", description: "Average collaboration readiness per table." },
+  { key: "programme", title: "By programme focus", description: "Response by the programme each table was themed around." },
+  { key: "seniority", title: "By seniority band", description: "The banding the organisers assigned on the seating plan." },
 ] as const;
 
 export type BlockCardKey = (typeof BLOCK_CARDS)[number]["key"];
@@ -114,6 +119,26 @@ export function roleRows(subset: Respondent[]): SegmentRow[] {
 }
 export function organisationRows(subset: Respondent[]): SegmentRow[] {
   return segmentRows(subset, (r) => r.organization?.trim() || "Not recorded");
+}
+/** Seating groups. Guests missing from the grouping sheet get an explicit
+ *  bucket rather than being dropped, so the totals still add up. */
+export function tableRows(subset: Respondent[]): SegmentRow[] {
+  return segmentRows(subset, (r) => r.tableLabel ?? "Not seated");
+}
+export function programmeRows(subset: Respondent[]): SegmentRow[] {
+  return segmentRows(subset, (r) => r.programmeFocus ?? "Not recorded");
+}
+export function seniorityRows(subset: Respondent[]): SegmentRow[] {
+  return segmentRows(subset, (r) => r.seniorityBand ?? r.role);
+}
+
+/** Sorts table rows by their number so "Table 10" follows "Table 9". */
+export function sortTableRows(rows: SegmentRow[]): SegmentRow[] {
+  const numberOf = (label: string) => {
+    const m = /(\d+)/.exec(label);
+    return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+  };
+  return [...rows].sort((a, b) => numberOf(a.segment) - numberOf(b.segment) || a.segment.localeCompare(b.segment));
 }
 
 /** Every collaboration area opted into anywhere in the form, tallied.

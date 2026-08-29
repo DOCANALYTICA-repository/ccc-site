@@ -4,6 +4,10 @@ import {
   industryRows,
   organisationRows,
   partnershipDemand,
+  programmeRows,
+  seniorityRows,
+  sortTableRows,
+  tableRows,
   priorityLeads,
   questionAggregateFor,
   readinessBands,
@@ -110,6 +114,48 @@ export function CardChart({
     case "timeline":
       return <ColumnChart items={submissionTimeline(subset)} />;
 
+    case "table":
+      return <SegmentBars rows={sortTableRows(tableRows(subset))} preserveOrder />;
+
+    case "programme":
+      return <SegmentBars rows={programmeRows(subset)} />;
+
+    case "seniority":
+      return <SegmentBars rows={seniorityRows(subset)} />;
+
+    case "tableReadiness": {
+      const rows = sortTableRows(tableRows(subset));
+      if (!rows.length) return <Empty>No seated respondents yet.</Empty>;
+      // Readiness is a percentage, so the bars are scaled against 100 rather
+      // than against each other — a table on 40% should look like 40%.
+      return <BarChart total={100} accent items={rows.map((r) => ({ label: r.segment, count: r.avgReadiness }))} />;
+    }
+
+    case "tableParticipation": {
+      const rows = data.derived.tableParticipation ?? [];
+      if (!rows.length) return <Empty>No seating plan has been imported for this event.</Empty>;
+      return (
+        <div className="space-y-2.5">
+          {rows.map((row) => (
+            <div key={row.tableLabel}>
+              <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+                <span className="truncate text-ink">
+                  {row.tableLabel}
+                  {row.programmeFocus && <span className="text-ink-muted"> · {row.programmeFocus}</span>}
+                </span>
+                <span className="shrink-0 text-xs text-ink-muted">
+                  {row.responded}/{row.seated} · {row.rate}%
+                </span>
+              </div>
+              <div className="h-2.5 overflow-hidden rounded-full bg-page">
+                <div className="h-full rounded-full bg-ink transition-all" style={{ width: `${row.rate}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     default: {
       const found = questionAggregateFor(cardKey, data, subset);
       if (!found) {
@@ -172,10 +218,11 @@ export function QuestionChart({ aggregate }: { aggregate: QuestionAggregate }) {
   );
 }
 
-function SegmentBars({ rows }: { rows: SegmentRow[] }) {
+function SegmentBars({ rows, preserveOrder = false }: { rows: SegmentRow[]; preserveOrder?: boolean }) {
   if (!rows.length) return <Empty>No respondents in this view.</Empty>;
-  const sorted = [...rows].sort((a, b) => b.count - a.count);
-  return <BarChart total={sorted.reduce((sum, r) => sum + r.count, 0)} items={sorted.map((r) => ({ label: r.segment, count: r.count }))} />;
+  // Tables read better in their own numeric order; everything else is ranked.
+  const ordered = preserveOrder ? rows : [...rows].sort((a, b) => b.count - a.count);
+  return <BarChart total={ordered.reduce((sum, r) => sum + r.count, 0)} items={ordered.map((r) => ({ label: r.segment, count: r.count }))} />;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {

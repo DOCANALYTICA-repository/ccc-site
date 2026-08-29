@@ -14,6 +14,8 @@ export function FilterBar({
   industries,
   roles,
   organisations,
+  tables,
+  programmes,
   matched,
   total,
 }: {
@@ -22,13 +24,15 @@ export function FilterBar({
   industries: string[];
   roles: string[];
   organisations: string[];
+  tables: string[];
+  programmes: string[];
   matched: number;
   total: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const active = activeFilterCount(filters);
 
-  function toggle(key: "industries" | "roles" | "organisations", value: string) {
+  function toggle(key: "industries" | "roles" | "organisations" | "tables" | "programmes", value: string) {
     const current = filters[key];
     onChange({
       ...filters,
@@ -66,6 +70,8 @@ export function FilterBar({
         <div className="space-y-3 border-t border-hairline pt-3">
           <ChipRow label="Industry" values={industries} selected={filters.industries} onToggle={(v) => toggle("industries", v)} />
           <ChipRow label="Role" values={roles} selected={filters.roles} onToggle={(v) => toggle("roles", v)} />
+          <ChipRow label="Table" values={tables} selected={filters.tables} onToggle={(v) => toggle("tables", v)} />
+          <ChipRow label="Programme" values={programmes} selected={filters.programmes} onToggle={(v) => toggle("programmes", v)} />
           <ChipRow label="Organisation" values={organisations} selected={filters.organisations} onToggle={(v) => toggle("organisations", v)} />
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
@@ -88,7 +94,7 @@ export function FilterBar({
 
       {active > 0 && !expanded && (
         <div className="flex flex-wrap gap-1.5">
-          {[...filters.industries, ...filters.roles, ...filters.organisations].map((value) => (
+          {[...filters.industries, ...filters.roles, ...filters.tables, ...filters.programmes, ...filters.organisations].map((value) => (
             <span key={value} className="rounded-full bg-page px-2.5 py-1 text-xs text-ink">{value}</span>
           ))}
           {filters.minInterest > 0 && <span className="rounded-full bg-page px-2.5 py-1 text-xs text-ink">Interest {filters.minInterest}+</span>}

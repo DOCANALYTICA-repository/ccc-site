@@ -21,6 +21,7 @@ function respondent(partial: Partial<Respondent>): Respondent {
     submittedAt: "2026-08-01T10:00:00.000Z",
     industry: "Banking", role: "Head / Lead",
     interest: 4, readiness: 70, wantsContact: true, preferredContactMode: "Email",
+    tableNumber: 1, tableLabel: "Table 1", programmeFocus: "BCOM (AFA)", seniorityBand: "VP / Senior Director",
     answers: {},
     ...partial,
   };
@@ -113,7 +114,7 @@ describe("matchesSearch", () => {
 describe("aggregateQuestion", () => {
   const question = (partial: Partial<QuestionReport>): QuestionReport => ({
     id: "q", prompt: "Prompt", type: "SINGLE_SELECT", section: "S", options: ["Yes", "No"],
-    breakdowns: { byIndustry: [], byRole: [] },
+    breakdowns: { byIndustry: [], byRole: [], byTable: [], byProgramme: [] },
     ...partial,
   });
 

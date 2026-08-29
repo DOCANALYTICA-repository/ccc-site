@@ -403,6 +403,12 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
                   id: true, fullName: true, organization: true, designation: true,
                   email: true, phone: true, profileUrl: true,
                   tags: { include: { tag: { select: { name: true } } } },
+                  // Table seating for this event, imported from the grouping
+                  // sheet. Analytics-only — see the EventSeating model.
+                  seatings: {
+                    where: { eventId: req.params.eventId },
+                    select: { tableNumber: true, tableLabel: true, programmeFocus: true, seniorityBand: true },
+                  },
                 },
               },
             },
@@ -442,6 +448,7 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
   const respondents = survey.responses.map((response) => {
     const contact = response.invitation.contact;
     const tags = contact.tags.map((t) => t.tag.name);
+    const seating = contact.seatings[0];
     const answerMap = new Map(response.answers.map((a) => [a.questionId, normalize(a)]));
     const answers: Record<string, boolean | string | string[] | number | null> = {};
     for (const question of questions) {
@@ -468,7 +475,15 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
       tags,
       submittedAt: response.submittedAt,
       industry: classifyIndustry(contact.organization, tags),
-      role: classifyRole(contact.designation),
+      // The organisers' own banding beats a guess from free text, so prefer
+      // the sheet and fall back to the classifier for anyone not seated.
+      role: seating?.seniorityBand
+        ? seating.seniorityBand.replace(/^\d+\.\s*/, "")
+        : classifyRole(contact.designation),
+      tableNumber: seating?.tableNumber ?? null,
+      tableLabel: seating?.tableLabel ?? null,
+      programmeFocus: seating?.programmeFocus ?? null,
+      seniorityBand: seating?.seniorityBand?.replace(/^\d+\.\s*/, "") ?? null,
       interest: interestQuestion ? answerMap.get(interestQuestion.id)?.scaleValue ?? null : null,
       // Scored against the questions this respondent was actually shown —
       // follow-ups they never saw shouldn't count against their readiness.
@@ -532,6 +547,10 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
   const byIndustry = groupBy((r) => r.industry);
   const byRole = groupBy((r) => r.role);
   const byOrganisation = groupBy((r) => r.organization?.trim() || "Not recorded");
+  // Seating groups, for "how is table 4 responding". Guests missing from the
+  // grouping sheet fall into an explicit bucket rather than being dropped.
+  const byTable = groupBy((r) => r.tableLabel ?? "Not seated");
+  const byProgramme = groupBy((r) => r.programmeFocus ?? "Not recorded");
 
   const average = (nums: number[]) => (nums.length ? nums.reduce((s, n) => s + n, 0) / nums.length : 0);
 
@@ -617,6 +636,43 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
   }
   const timeline = Array.from(timelineTally, ([day, count]) => ({ day, count })).sort((a, b) => a.day.localeCompare(b.day));
 
+  // Every table on the seating plan, including ones nobody has answered from
+  // yet: a table with zero responses is the most useful thing on the board,
+  // and it would be invisible if we only grouped the respondents we have.
+  const allSeatings = await prisma.eventSeating.findMany({
+    where: { eventId: req.params.eventId },
+    select: { tableNumber: true, tableLabel: true, programmeFocus: true, contactId: true },
+    orderBy: { tableNumber: "asc" },
+  });
+  const seatedByTable = new Map<string, { tableNumber: number; programmeFocus: string | null; seated: number }>();
+  for (const seat of allSeatings) {
+    const current = seatedByTable.get(seat.tableLabel)
+      ?? { tableNumber: seat.tableNumber, programmeFocus: seat.programmeFocus, seated: 0 };
+    current.seated += 1;
+    seatedByTable.set(seat.tableLabel, current);
+  }
+  const respondedByTable = new Map<string, typeof respondents>();
+  for (const r of respondents) {
+    if (!r.tableLabel) continue;
+    if (!respondedByTable.has(r.tableLabel)) respondedByTable.set(r.tableLabel, []);
+    respondedByTable.get(r.tableLabel)!.push(r);
+  }
+  const tableParticipation = Array.from(seatedByTable, ([tableLabel, info]) => {
+    const members = respondedByTable.get(tableLabel) ?? [];
+    return {
+      tableLabel,
+      tableNumber: info.tableNumber,
+      programmeFocus: info.programmeFocus,
+      seated: info.seated,
+      responded: members.length,
+      rate: info.seated ? Math.round((members.length / info.seated) * 100) : 0,
+      avgInterest: Number(average(members.map((m) => m.interest ?? 0).filter(Boolean)).toFixed(2)),
+      avgReadiness: Math.round(average(members.map((m) => m.readiness))),
+      wantsContact: members.filter((m) => m.wantsContact).length,
+      topInterests: topInterests(members, 3),
+    };
+  }).sort((a, b) => a.tableNumber - b.tableNumber);
+
   res.json({
     survey: {
       id: survey.id, title: survey.title, status: survey.status,
@@ -640,11 +696,15 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
       ...aggregate(question, respondents),
       breakdowns: {
         byIndustry: byIndustry.map(({ segment, members }) => ({ segment, total: members.length, ...aggregate(question, members) })),
+        byTable: byTable.map(({ segment, members }) => ({ segment, total: members.length, ...aggregate(question, members) })),
+        byProgramme: byProgramme.map(({ segment, members }) => ({ segment, total: members.length, ...aggregate(question, members) })),
         byRole: byRole.map(({ segment, members }) => ({ segment, total: members.length, ...aggregate(question, members) })),
       },
     })),
     segments: {
       industries: segmentSummary(byIndustry),
+      tables: segmentSummary(byTable),
+      programmes: segmentSummary(byProgramme),
       roles: segmentSummary(byRole),
       organisations: byOrganisation.map(({ segment, members }) => ({
         segment,
@@ -654,7 +714,7 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
         wantsContact: members.filter((m) => m.wantsContact).length,
       })),
     },
-    derived: { sectionEngagement, partnershipDemand, hotLeads, timeline },
+    derived: { sectionEngagement, partnershipDemand, hotLeads, timeline, tableParticipation },
     respondents,
     readinessDistribution: [
       { band: "0–20", count: respondents.filter((r) => r.readiness <= 20).length },
