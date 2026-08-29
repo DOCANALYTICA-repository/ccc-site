@@ -78,7 +78,7 @@ surveysRouter.get("/mine/:eventId", async (req, res) => {
       },
     },
   });
-  if (!invitation || invitation.status !== "ARRIVED_IN_CAMPUS" || invitation.event.survey?.status !== "OPEN") {
+  if (!invitation || invitation.status !== "ARRIVED_IN_CAMPUS" || !invitation.event.survey || invitation.event.survey.status === "CLOSED") {
     return res.status(404).json({ error: "No open questionnaire is available." });
   }
   res.json({ survey: invitation.event.survey, invitationId: invitation.id, response: invitation.surveyResponse });
@@ -96,7 +96,7 @@ surveysRouter.put("/mine/:eventId", async (req, res) => {
     include: { event: { include: { survey: { include: { questions: true } } } } },
   });
   const survey = invitation?.event.survey;
-  if (!invitation || invitation.status !== "ARRIVED_IN_CAMPUS" || survey?.status !== "OPEN") {
+  if (!invitation || invitation.status !== "ARRIVED_IN_CAMPUS" || !survey || survey.status === "CLOSED") {
     return res.status(403).json({ error: "This questionnaire is not available." });
   }
   const byId = new Map(survey.questions.map((q) => [q.id, q]));

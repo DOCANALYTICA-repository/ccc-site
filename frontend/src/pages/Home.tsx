@@ -113,7 +113,7 @@ function CommunityHome() {
                   {inv.status === "CONFIRMED" && (
                     <span className="text-xs text-ink-muted">Check in at the registration desk on arrival.</span>
                   )}
-                  {inv.status === "ARRIVED_IN_CAMPUS" && inv.event.survey?.status === "OPEN" && (
+                  {inv.status === "ARRIVED_IN_CAMPUS" && inv.event.survey && inv.event.survey.status !== "CLOSED" && (
                     <Link to={`/events/${inv.event.id}/survey`}><Button size="sm">Complete form</Button></Link>
                   )}
                 </div>
