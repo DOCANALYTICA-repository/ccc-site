@@ -128,8 +128,9 @@ Directory** settings.
    `DATABASE_URL` and session/direct URL for `DIRECT_URL`.
 2. Environment variables (Production + Preview):
    ```
-   DATABASE_URL              # Supavisor transaction-mode URL — runtime
-   DIRECT_URL                # Supavisor session/direct URL — migrations
+   DATABASE_URL              # Supavisor TRANSACTION pooler, port 6543 —
+                             #   append ?pgbouncer=true&connection_limit=1
+   DIRECT_URL                # Direct connection, port 5432 — migrations only
    AUTH_SECRET                # openssl rand -base64 32
    CHECKIN_SECRET             # separate secret for venue QR challenges
    SUPABASE_URL
@@ -138,8 +139,10 @@ Directory** settings.
    SUPABASE_COURSE_BUCKET=course-resources
    FRONTEND_ORIGIN           # https://<your-frontend-project>.vercel.app
    DEFAULT_PHONE_REGION=IN
-   NODE_ENV=production
    ```
+   Do **not** add `NODE_ENV` — Vercel sets it to `production` itself, and the
+   session cookie needs that value to become `SameSite=None; Secure`. Setting
+   it by hand to anything else breaks cross-domain login silently.
 3. Create a private Storage bucket named `course-resources`, disable public
    Realtime channels, and apply Prisma migrations.
 4. Deploy. `vercel.json` routes every request through `api/index.ts`, which
@@ -158,9 +161,20 @@ Directory** settings.
 
 ### Frontend project — Root Directory: `frontend`
 
-1. Environment variables: `VITE_API_URL`, `VITE_SUPABASE_URL`, and
-   `VITE_SUPABASE_PUBLISHABLE_KEY`.
-2. Deploy. Vercel auto-detects the Vite build.
+1. Environment variables:
+   ```
+   VITE_API_URL                      # https://<backend-project>.vercel.app/api
+   VITE_SUPABASE_URL                 # optional, Realtime only
+   VITE_SUPABASE_PUBLISHABLE_KEY     # optional, Realtime only
+   ```
+   `VITE_API_URL` **must include the `/api` suffix** — `lib/api.ts` appends
+   paths like `/auth/login` to it directly, so a bare domain 404s everything.
+   All `VITE_*` values are baked in at build time: changing one in the
+   dashboard does nothing until you redeploy.
+2. Deploy. Vercel auto-detects the Vite build. `vercel.json` rewrites unmatched
+   paths to `index.html` so client-side routes survive a cold load — without it
+   a scanned `/poc?t=…` QR link 404s, since the visitor never passes through
+   the app's own router.
 
 ### Why cookies need care here
 
