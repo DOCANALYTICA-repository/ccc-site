@@ -1,30 +1,124 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { trustedOrigins } from "../middleware/security.js";
 import { getSupabaseAdmin } from "../lib/supabase.js";
 
 export const coursesRouter = Router();
-coursesRouter.use(requireAuth);
 
+/** Resources whose storagePath starts with this prefix live in the repo under
+ * backend/assets rather than in Supabase Storage. The Commerce syllabi are a
+ * fixed set of department-wide PDFs that ship with the deployment, so binding
+ * them to a storage bucket — and to that bucket's credentials being present —
+ * would buy nothing. Uploads still go to Supabase. */
+const LOCAL_PREFIX = "local:";
+
+/** Where backend/assets ends up depends on who built us: tsc emits to
+ * dist/src/routes, `tsx` runs straight from src/routes, and Vercel bundles the
+ * function somewhere else again with the directory copied in via the
+ * includeFiles rule in vercel.json. Rather than guess, probe the candidates
+ * once at module load. */
+const ASSETS_ROOT = (() => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, "../../assets"), // src/routes/… (tsx, dev)
+    path.resolve(here, "../../../assets"), // dist/src/routes/… (tsc build)
+    path.resolve(process.cwd(), "assets"), // Vercel: includeFiles, cwd at root
+    path.resolve(process.cwd(), "backend/assets"), // cwd at repo root
+  ];
+  return candidates.find((dir) => fs.existsSync(dir)) ?? candidates[0]!;
+})();
+
+/** A catalog is readable if it is department-wide (isPublic) or explicitly
+ * granted to this account, directly or through an access group. */
 const catalogAccessWhere = (userId: string) => ({
-  grants: {
-    some: {
-      OR: [
-        { userId },
-        { group: { members: { some: { userId } } } },
-      ],
+  OR: [
+    { isPublic: true },
+    {
+      grants: {
+        some: {
+          OR: [
+            { userId },
+            { group: { members: { some: { userId } } } },
+          ],
+        },
+      },
     },
-  },
+  ],
 });
+
+// -------------------- Locally-hosted resource files --------------------
+
+/** Served from a short-lived signed URL rather than the session cookie so the
+ * PDF can be rendered in an <iframe> on the frontend's own domain: the API is
+ * a different origin in production, and third-party cookies are exactly what
+ * browsers are busy taking away. The token is minted only after the caller's
+ * access to the catalog has been checked. */
+const FILE_TOKEN_TTL_SECONDS = 15 * 60;
+
+function fileSecret() {
+  const value = process.env.CHECKIN_SECRET ?? process.env.AUTH_SECRET;
+  if (!value) throw new Error("CHECKIN_SECRET or AUTH_SECRET env var is required");
+  return value;
+}
+
+function signFileToken(resourceId: string) {
+  return jwt.sign({ resourceId, kind: "course-file" }, fileSecret(), { expiresIn: FILE_TOKEN_TTL_SECONDS });
+}
+
+// Registered before requireAuth: the signed token is the credential here.
+coursesRouter.get("/file", async (req, res) => {
+  let resourceId: string;
+  try {
+    const decoded = jwt.verify(String(req.query.t ?? ""), fileSecret());
+    if (typeof decoded === "string" || decoded.kind !== "course-file" || typeof decoded.resourceId !== "string") {
+      throw new Error("bad token");
+    }
+    resourceId = decoded.resourceId;
+  } catch {
+    return res.status(401).json({ error: "This link has expired. Reopen the syllabus." });
+  }
+
+  const resource = await prisma.courseResource.findUnique({ where: { id: resourceId } });
+  if (!resource?.storagePath?.startsWith(LOCAL_PREFIX)) {
+    return res.status(404).json({ error: "Resource file is missing." });
+  }
+
+  // The path came out of a signed token, but resolve-and-contain anyway: a
+  // stored path is data, and one traversal bug here reads the whole disk.
+  const absolute = path.resolve(ASSETS_ROOT, resource.storagePath.slice(LOCAL_PREFIX.length));
+  if (!absolute.startsWith(ASSETS_ROOT + path.sep) || !fs.existsSync(absolute)) {
+    return res.status(404).json({ error: "Resource file is missing." });
+  }
+
+  // Helmet's app-wide X-Frame-Options and default-src 'none' would both block
+  // the frontend from embedding this: the first forbids the frame outright,
+  // and the second starves the browser's built-in PDF viewer of the resources
+  // it renders itself with, leaving a blank pane. frame-ancestors, scoped to
+  // the configured frontend origins, is the whole policy this response needs.
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", `frame-ancestors ${trustedOrigins().join(" ")}`);
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("Content-Type", resource.mimeType ?? "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${resource.title.replace(/[^a-zA-Z0-9 ._-]/g, "")}.pdf"`);
+  res.setHeader("Cache-Control", "private, max-age=900");
+  fs.createReadStream(absolute).pipe(res);
+});
+
+coursesRouter.use(requireAuth);
 
 coursesRouter.get("/", async (req, res) => {
   const q = String(req.query.q ?? "").trim();
   const internal = ["ADMIN", "STAFF"].includes(req.user!.role);
   const catalogs = await prisma.courseCatalog.findMany({
     where: {
-      ...(internal ? {} : { status: "PUBLISHED" as const, ...catalogAccessWhere(req.user!.id) }),
+      ...(internal ? {} : { status: "PUBLISHED" as const, AND: [catalogAccessWhere(req.user!.id)] }),
       ...(q ? {
         OR: [
           { title: { contains: q, mode: "insensitive" as const } },
@@ -48,7 +142,7 @@ coursesRouter.get("/:id", async (req, res) => {
   const catalog = await prisma.courseCatalog.findFirst({
     where: {
       id: String(req.params.id),
-      ...(internal ? {} : { status: "PUBLISHED" as const, ...catalogAccessWhere(req.user!.id) }),
+      ...(internal ? {} : { status: "PUBLISHED" as const, AND: [catalogAccessWhere(req.user!.id)] }),
     },
     include: {
       program: true,
@@ -71,12 +165,16 @@ coursesRouter.get("/resources/:resourceId/access", async (req, res) => {
   const internal = ["ADMIN", "STAFF"].includes(req.user!.role);
   if (!internal) {
     const allowed = await prisma.courseCatalog.count({
-      where: { id: resource.course.catalogId, status: "PUBLISHED", ...catalogAccessWhere(req.user!.id) },
+      where: { AND: [{ id: resource.course.catalogId, status: "PUBLISHED" }, catalogAccessWhere(req.user!.id)] },
     });
     if (!allowed) return res.status(403).json({ error: "Not permitted." });
   }
   if (resource.externalUrl) return res.json({ url: resource.externalUrl, external: true });
   if (!resource.storagePath) return res.status(404).json({ error: "Resource file is missing." });
+  if (resource.storagePath.startsWith(LOCAL_PREFIX)) {
+    const base = `${req.protocol}://${req.get("host")}${req.baseUrl}`;
+    return res.json({ url: `${base}/file?t=${encodeURIComponent(signFileToken(resource.id))}`, expiresIn: FILE_TOKEN_TTL_SECONDS });
+  }
   const supabase = getSupabaseAdmin();
   if (!supabase) return res.status(503).json({ error: "Storage is not configured." });
   const { data, error } = await supabase.storage
@@ -163,6 +261,7 @@ coursesRouter.patch("/admin/catalogs/:id", requireRole("ADMIN"), async (req, res
     title: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(4000).nullish(),
     status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
+    isPublic: z.boolean().optional(),
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid catalog update." });
   const current = await prisma.courseCatalog.findUnique({ where: { id: String(req.params.id) } });

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Role } from "@prisma/client";
 import jwt from "jsonwebtoken";
 import { parsePhoneNumberWithError } from "libphonenumber-js";
 import { prisma } from "../lib/prisma.js";
@@ -23,6 +24,9 @@ export const authRouter = Router();
 const INVITE_TTL_MS = 48 * 60 * 60 * 1000; // 48h
 const RESET_TTL_MS = 60 * 60 * 1000; // 1h
 
+/** Accounts that run the platform rather than take part in it. */
+const OPERATOR_ROLES: Role[] = ["ADMIN", "STAFF"];
+
 const cookieOpts = { ...SESSION_COOKIE_OPTS, maxAge: SESSION_COOKIE_MAX_AGE_MS };
 
 function normalizeIdentifier(value: string) {
@@ -37,7 +41,7 @@ function normalizeIdentifier(value: string) {
 
 function shapeUser(user: {
   id: string; email: string | null; phone: string | null; name: string;
-  role: "ADMIN" | "STAFF" | "MEMBER" | "GUEST"; mustChangePassword: boolean;
+  role: Role; mustChangePassword: boolean;
 }) {
   return {
     id: user.id, email: user.email, phone: user.phone, name: user.name,
@@ -83,8 +87,12 @@ authRouter.post("/login", async (req, res) => {
       create: {
         userId: user.id,
         displayName: user.name,
-        organization: ["ADMIN", "STAFF", "MEMBER"].includes(user.role) ? "CHRIST University" : null,
-        discoverable: user.role !== "GUEST",
+        organization: user.role === "GUEST" ? null : "CHRIST University",
+        // Operator accounts are staff plumbing, not people to connect with —
+        // an admin must never surface in a guest's Network tab. Everyone else
+        // is listed on first sign-in and can opt out from their profile.
+        discoverable: !OPERATOR_ROLES.includes(user.role),
+        adminVisible: !OPERATOR_ROLES.includes(user.role),
       },
       update: {},
     }),
@@ -120,6 +128,9 @@ authRouter.post("/change-password", requireAuth, async (req, res) => {
     data: {
       passwordHash: await hashPassword(parsed.data.newPassword),
       mustChangePassword: false,
+      // The one-time code exists only to get them here; it must not outlive
+      // the password it was traded for.
+      bootstrapCode: null,
       tokenVersion: { increment: 1 },
     },
   });

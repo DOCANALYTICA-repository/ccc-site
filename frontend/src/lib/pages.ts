@@ -31,7 +31,7 @@ export const CoursesPage = page(() => import("@/pages/Courses"), "CoursesPage");
 export const CourseDetailPage = page(() => import("@/pages/Courses"), "CourseDetailPage");
 export const ProfilePage = page(() => import("@/pages/Profile"), "ProfilePage");
 export const NotificationsPage = page(() => import("@/pages/Notifications"), "NotificationsPage");
-export const CheckInPage = page(() => import("@/pages/CheckIn"), "CheckInPage");
+export const PocPortal = page(() => import("@/pages/PocPortal"), "PocPortal");
 export const EventSurveyPage = page(() => import("@/pages/EventSurvey"), "EventSurveyPage");
 export const AdminHub = page(() => import("@/pages/AdminHub"), "AdminHub");
 export const CoursesAdminPage = page(() => import("@/pages/CoursesAdmin"), "CoursesAdminPage");

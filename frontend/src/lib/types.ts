@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "STAFF" | "MEMBER" | "GUEST";
+export type Role = "ADMIN" | "STAFF" | "FACULTY" | "STUDENT" | "MEMBER" | "GUEST";
 export type InvitationStatus = "UNCONFIRMED" | "CONFIRMED" | "DECLINED" | "ARRIVED_IN_CAMPUS";
 export type EventStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
 export type ContactSource = "MANUAL" | "IMPORT" | "WALK_IN";

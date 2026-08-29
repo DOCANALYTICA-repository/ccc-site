@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Role } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -22,6 +23,10 @@ const profileSchema = z.object({
   shareEmail: z.boolean(),
   shareLinkedIn: z.boolean(),
 });
+
+/** Accounts that run the platform rather than take part in it — never
+ * discoverable, never connectable. Mirrors routes/auth.ts. */
+const OPERATOR_ROLES: Role[] = ["ADMIN", "STAFF"];
 
 const pairKey = (a: string, b: string) => [a, b].sort().join(":");
 
@@ -60,6 +65,9 @@ networkRouter.get("/people", async (req, res) => {
       userId: { notIn: [req.user!.id, ...excluded] },
       discoverable: true,
       adminVisible: true,
+      // Belt and braces alongside the discoverable flag set at sign-in: an
+      // operator account must never be listed, whatever its profile says.
+      user: { role: { notIn: OPERATOR_ROLES } },
       ...(q ? {
         OR: [
           { displayName: { contains: q, mode: "insensitive" } },
@@ -117,7 +125,12 @@ networkRouter.post("/connections", async (req, res) => {
   if (!parsed.success || parsed.data.recipientId === req.user!.id) return res.status(400).json({ error: "Invalid recipient." });
   if (await isBlocked(req.user!.id, parsed.data.recipientId)) return res.status(403).json({ error: "Connection unavailable." });
   const recipient = await prisma.networkProfile.findFirst({
-    where: { userId: parsed.data.recipientId, discoverable: true, adminVisible: true },
+    where: {
+      userId: parsed.data.recipientId,
+      discoverable: true,
+      adminVisible: true,
+      user: { role: { notIn: OPERATOR_ROLES } },
+    },
   });
   if (!recipient) return res.status(404).json({ error: "Profile not found." });
   const key = pairKey(req.user!.id, parsed.data.recipientId);

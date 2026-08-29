@@ -6,3 +6,8 @@ build/
 *.log
 .DS_Store
 .playwright-mcp/
+
+# The .docx sources at the repo root — the shipped PDFs live in
+# backend/assets/syllabus. Anchored: an unanchored pattern also matches
+# backend/assets/syllabus on case-insensitive filesystems.
+/Syllabus/

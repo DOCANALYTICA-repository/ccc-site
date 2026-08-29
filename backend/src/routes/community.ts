@@ -1,5 +1,4 @@
 import { Router } from "express";
-import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -86,53 +85,7 @@ communityRouter.patch("/invitations/:id/respond", requireRole("GUEST"), async (r
   res.json({ invitation: updated });
 });
 
-communityRouter.post("/check-in", requireRole("GUEST"), async (req, res) => {
-  const parsed = z.object({ token: z.string().min(1) }).safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "A check-in token is required." });
-  let payload: { eventId: string; sessionId: string };
-  try {
-    payload = jwt.verify(parsed.data.token, process.env.CHECKIN_SECRET ?? process.env.AUTH_SECRET!) as typeof payload;
-  } catch {
-    return res.status(400).json({ error: "This QR code has expired. Scan the current code." });
-  }
-  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-  if (!user?.contactId) return res.status(403).json({ error: "No guest record is linked." });
-  const [session, invitation] = await Promise.all([
-    prisma.eventCheckInSession.findFirst({
-      where: { id: payload.sessionId, eventId: payload.eventId, isActive: true },
-      include: { event: true },
-    }),
-    prisma.eventInvitation.findUnique({
-      where: { eventId_contactId: { eventId: payload.eventId, contactId: user.contactId } },
-    }),
-  ]);
-  if (!session || session.event.status === "CANCELLED") return res.status(400).json({ error: "Check-in is not active." });
-  if (!invitation) return res.status(403).json({ error: "You are not invited to this event." });
-  if (invitation.status === "ARRIVED_IN_CAMPUS") return res.json({ invitation, alreadyCheckedIn: true });
-  if (invitation.status !== "CONFIRMED") return res.status(409).json({ error: "Accept the invitation before checking in." });
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const value = await tx.eventInvitation.update({
-      where: { id: invitation.id },
-      data: { status: "ARRIVED_IN_CAMPUS", statusUpdatedAt: new Date(), statusUpdatedBy: req.user!.id },
-    });
-    await tx.invitationStatusHistory.create({
-      data: { invitationId: invitation.id, fromStatus: invitation.status, toStatus: "ARRIVED_IN_CAMPUS", changedBy: req.user!.id },
-    });
-    const survey = await tx.eventSurvey.findUnique({ where: { eventId: payload.eventId } });
-    if (survey?.status === "OPEN") {
-      await tx.notification.create({
-        data: {
-          userId: req.user!.id,
-          type: "SURVEY_OPENED",
-          title: survey.title,
-          body: "The event questionnaire is ready.",
-          entityType: "EventSurvey",
-          entityId: survey.id,
-        },
-      });
-    }
-    return value;
-  });
-  res.json({ invitation: updated, alreadyCheckedIn: false });
-});
+// Guests no longer check themselves in. Attendance is marked at the gate by a
+// student point-of-contact through the POC portal (routes/poc.ts), so the
+// self-service endpoint that let anyone holding a venue QR mark their own
+// arrival is gone rather than left running alongside it.
