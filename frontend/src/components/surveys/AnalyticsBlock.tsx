@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Pin, PinOff } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 /** One headed, collapsible analytics section.
  *
@@ -15,6 +16,8 @@ export function AnalyticsBlock({
   action,
   children,
   defaultOpen = true,
+  pinned,
+  onTogglePin,
 }: {
   id: string;
   title: string;
@@ -22,6 +25,9 @@ export function AnalyticsBlock({
   action?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  /** Omit both pin props to render a block that cannot be pinned. */
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -39,7 +45,23 @@ export function AnalyticsBlock({
             {subtitle && <span className="mt-0.5 block text-sm text-ink-muted">{subtitle}</span>}
           </span>
         </button>
-        {action && <div className="shrink-0">{action}</div>}
+        <div className="flex shrink-0 items-center gap-2">
+          {action}
+          {onTogglePin && (
+            <Button
+              type="button"
+              size="sm"
+              variant={pinned ? "primary" : "secondary"}
+              onClick={onTogglePin}
+              aria-pressed={pinned}
+              title={pinned ? "Remove from the admin dashboard" : "Add to the admin dashboard"}
+            >
+              {pinned
+                ? <><PinOff className="h-3.5 w-3.5" aria-hidden />Pinned</>
+                : <><Pin className="h-3.5 w-3.5" aria-hidden />Pin</>}
+            </Button>
+          )}
+        </div>
       </div>
       {open && <div className="mt-5">{children}</div>}
     </Card>

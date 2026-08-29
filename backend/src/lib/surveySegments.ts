@@ -31,19 +31,22 @@ export const INDUSTRY_SEGMENTS = [
   "Real Estate & Infrastructure",
   "Energy & Utilities",
   "Logistics & Transport",
+  "Hospitality & Travel",
   "Other / Unclassified",
 ] as const;
 
 export type IndustrySegment = (typeof INDUSTRY_SEGMENTS)[number];
 
 const INDUSTRY_RULES: Array<{ segment: IndustrySegment; keywords: string[] }> = [
-  { segment: "Audit, Tax & Accounting", keywords: ["chartered accountant", "audit", "taxation", "accounting", "accountants", " ca ", "deloitte", "kpmg", "pwc", "ernst", "grant thornton", "bdo"] },
-  { segment: "Banking", keywords: ["bank", "banking", "nbfc", "credit union", "hdfc", "icici", "axis", "kotak", "sbi", "yes bank", "federal bank"] },
+  { segment: "Audit, Tax & Accounting", keywords: ["chartered accountant", "audit", "taxation", "accounting", "accountants", " ca ", "deloitte", "kpmg", "pwc", "ernst", "grant thornton", "bdo", " ey ", "young"] },
+  { segment: "Banking", keywords: ["bank", "banking", "nbfc", "credit union", "hdfc", "icici", "axis", "kotak", "sbi", "yes bank", "federal bank",
+      "jp morgan", "jpmorgan", "state street", "bnp", "paribas", "paribus", "goldman", "morgan stanley", "citi"] },
   { segment: "Insurance", keywords: ["insurance", "assurance", "life insur", "general insur", "reinsur", "actuar"] },
-  { segment: "Financial Services & Investment", keywords: ["capital", "invest", "asset management", "wealth", "securities", "broking", "brokerage", "mutual fund", "private equity", "venture", "financial services", "fintech", "treasury", "hedge fund"] },
-  { segment: "Analytics & Data", keywords: ["analytics", "data science", "big data", "business intelligence", "insights"] },
-  { segment: "Consulting", keywords: ["consult", "advisory", "advisors", "strategy partners", "mckinsey", "bain", "bcg", "accenture"] },
-  { segment: "IT & Technology", keywords: ["technolog", "software", "infotech", "it services", "systems", "digital", "cyber", "cloud", "saas", "tcs", "infosys", "wipro", "cognizant", "hcl", "tech mahindra", "microsoft", "google", "amazon", "ibm", "oracle", "sap"] },
+  { segment: "Financial Services & Investment", keywords: ["capital", "invest", "asset management", "wealth", "securities", "broking", "brokerage", "mutual fund", "private equity", "venture", "financial services", "fintech", "treasury", "hedge fund", "finsol", "finserv"] },
+  { segment: "Analytics & Data", keywords: ["analytics", "data science", "big data", "business intelligence", "insights", "market research", "metrics"] },
+  { segment: "Consulting", keywords: ["consult", "advisory", "advisors", "strategy partners", "mckinsey", "bain", "bcg", "accenture", "lawyer", "legal", " law "] },
+  { segment: "IT & Technology", keywords: ["technolog", "software", "infotech", "it services", "systems", "digital", "cyber", "cloud", "saas", "tcs", "infosys", "wipro", "cognizant", "hcl", "tech mahindra", "microsoft", "google", "amazon", "ibm", "oracle", "sap",
+      "salesforce", "synopsys", "synechron", "atos", "capgemini", "mphasis", "cadsoft", "sage", "zeiss", "novometrics"] },
   { segment: "Healthcare & Pharma", keywords: ["hospital", "health", "pharma", "biotech", "medical", "clinic", "diagnostic", "life sciences"] },
   { segment: "Education & Academia", keywords: ["university", "college", "school", "institute", "academy", "education", "edtech", "iim", "iit", "nit"] },
   { segment: "Government & Public Sector", keywords: ["government", "ministry", "municipal", "public sector", "psu", "corporation of india", "authority", "commission", "council of india", "rbi", "sebi", "irdai"] },
@@ -52,8 +55,9 @@ const INDUSTRY_RULES: Array<{ segment: IndustrySegment; keywords: string[] }> = 
   { segment: "Real Estate & Infrastructure", keywords: ["real estate", "realty", "infrastructure", "construction", "builders", "properties", "housing", "developers"] },
   { segment: "Energy & Utilities", keywords: ["energy", "power", "solar", "petroleum", "oil", "gas", "utilities", "electric", "renewable"] },
   { segment: "Logistics & Transport", keywords: ["logistics", "supply chain", "shipping", "freight", "transport", "courier", "warehous", "airlines", "aviation"] },
-  { segment: "FMCG & Retail", keywords: ["fmcg", "retail", "consumer goods", "foods", "beverage", "apparel", "supermarket", "e-commerce", "ecommerce", "hypermarket"] },
-  { segment: "Manufacturing & Industrial", keywords: ["manufactur", "industries", "industrial", "engineering", "steel", "cement", "automotive", "auto ", "motors", "chemicals", "textile", "machinery", "factory"] },
+  { segment: "Hospitality & Travel", keywords: ["hotel", "palace", "resort", "hospitality", "travel", "tourism"] },
+  { segment: "FMCG & Retail", keywords: ["fmcg", "retail", "consumer goods", "foods", "beverage", "apparel", "supermarket", "e-commerce", "ecommerce", "hypermarket", "tesco", "specsmakers", "aromatic"] },
+  { segment: "Manufacturing & Industrial", keywords: ["manufactur", "industries", "industrial", "engineering", "steel", "cement", "automotive", "auto ", "motors", "chemicals", "textile", "machinery", "factory", "bosch", "freudenberg", "engines", "reliance"] },
 ];
 
 export const ROLE_SEGMENTS = [
@@ -75,7 +79,7 @@ const ROLE_RULES: Array<{ segment: RoleSegment; keywords: string[] }> = [
   // VP outranks C-Suite here purely so "Vice President" isn't swallowed by
   // the C-Suite "president" keyword; a true president has no "vice" prefix.
   { segment: "VP / Director", keywords: [" vice president ", " vice president", " vp ", " avp ", " svp ", " evp ", " director ", " general manager ", " gm "] },
-  { segment: "C-Suite", keywords: [" chief ", " ceo ", " cfo ", " coo ", " cto ", " cio ", " cmo ", " chro ", " managing director ", " md ", " president ", " chairman ", " chairperson "] },
+  { segment: "C-Suite", keywords: [" chief ", " ceo ", " cfo ", " coo ", " cto ", " cio ", " cmo ", " chro ", " ciso ", " cdo ", " managing director ", " md ", " president ", " chairman ", " chairperson "] },
   { segment: "Head / Lead", keywords: [" head ", " lead ", " principal ", " dean "] },
   { segment: "Academic / Researcher", keywords: ["professor", "faculty", "lecturer", "researcher", "scientist", "scholar", " phd "] },
   { segment: "Manager", keywords: ["manager", "supervisor", " mgr "] },

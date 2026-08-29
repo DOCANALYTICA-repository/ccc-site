@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { BarChart3, Download, Search, Users } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { BarChart3, Download, LayoutDashboard, Search, Users } from "lucide-react";
 import { api, downloadFile } from "@/lib/api";
 import { useQuery } from "@/hooks/useQuery";
+import { questionCardKey } from "@/lib/analyticsCards";
+import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -36,6 +38,7 @@ type Breakdown = "none" | "industry" | "role";
 interface EventOption { id: string; name: string }
 
 export function SurveyAnalyticsPage() {
+  const { push } = useToast();
   const [params, setParams] = useSearchParams();
   const [eventId, setEventId] = useState(params.get("event") ?? "");
   const tab: Tab = params.get("tab") === "responses" ? "responses" : "analytics";
@@ -57,6 +60,24 @@ export function SurveyAnalyticsPage() {
   const [respondentSort, setRespondentSort] = useState<RespondentSort>("readiness-desc");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Charts pinned to this admin's dashboard for this event. Held on the page
+  // rather than inside the analytics tab so switching to the responses tab and
+  // back does not discard an unsaved change.
+  const dashboardQuery = useQuery(
+    eventId ? `/surveys/events/${eventId}/dashboard` : null,
+    () => api.get<{ cards: Array<{ cardKey: string; position: number }> }>(`/surveys/events/${eventId}/dashboard`),
+  );
+  const [pinned, setPinned] = useState<string[] | null>(null);
+  const [savingPins, setSavingPins] = useState(false);
+  const savedPinned = useMemo(
+    () => (dashboardQuery.data?.cards ?? []).map((c) => c.cardKey),
+    [dashboardQuery.data],
+  );
+  // Server state is the starting point; a local edit takes over once made.
+  const effectivePinned = pinned ?? savedPinned;
+  const dirty = pinned !== null
+    && (pinned.length !== savedPinned.length || pinned.some((k, i) => k !== savedPinned[i]));
+
   useEffect(() => {
     setEventId((current) => current || events[0]?.id || "");
   }, [events]);
@@ -69,9 +90,33 @@ export function SurveyAnalyticsPage() {
   function chooseEvent(next: string) {
     setEventId(next);
     setSelectedId(null);
+    setPinned(null);
     const updated = new URLSearchParams(params);
     updated.set("event", next);
     setParams(updated, { replace: true });
+  }
+
+  function togglePin(cardKey: string) {
+    setPinned((current) => {
+      const base = current ?? savedPinned;
+      return base.includes(cardKey) ? base.filter((k) => k !== cardKey) : [...base, cardKey];
+    });
+  }
+
+  async function saveDashboard() {
+    if (!eventId) return;
+    setSavingPins(true);
+    try {
+      await api.put(`/surveys/events/${eventId}/dashboard`, { cardKeys: effectivePinned });
+      await dashboardQuery.refetch();
+      // Hand control back to server state so the two cannot drift apart.
+      setPinned(null);
+      push("Dashboard updated.", "success");
+    } catch {
+      push("Couldn't save the dashboard selection.", "error");
+    } finally {
+      setSavingPins(false);
+    }
   }
 
   const filtered = useMemo(
@@ -154,7 +199,18 @@ export function SurveyAnalyticsPage() {
           />
 
           {tab === "analytics" ? (
-            <AnalyticsTab data={data} subset={filtered} search={search} onSearch={setSearch} />
+            <AnalyticsTab
+              data={data}
+              subset={filtered}
+              search={search}
+              onSearch={setSearch}
+              pinned={effectivePinned}
+              onTogglePin={togglePin}
+              onSavePins={saveDashboard}
+              savingPins={savingPins}
+              dirty={dirty}
+              eventId={eventId}
+            />
           ) : (
             <ResponsesTab
               data={data}
@@ -196,8 +252,19 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 /* ------------------------------------------------------------------ */
 
 function AnalyticsTab({
-  data, subset, search, onSearch,
-}: { data: Analytics; subset: Respondent[]; search: string; onSearch: (value: string) => void }) {
+  data, subset, search, onSearch, pinned, onTogglePin, onSavePins, savingPins, dirty, eventId,
+}: {
+  data: Analytics;
+  subset: Respondent[];
+  search: string;
+  onSearch: (value: string) => void;
+  pinned: string[];
+  onTogglePin: (cardKey: string) => void;
+  onSavePins: () => void;
+  savingPins: boolean;
+  dirty: boolean;
+  eventId: string;
+}) {
   const [demandSort, setDemandSort] = useState<CountSort>("count-desc");
   const [segmentSort, setSegmentSort] = useState<CountSort>("count-desc");
   const [breakdown, setBreakdown] = useState<Breakdown>("none");
@@ -281,7 +348,7 @@ function AnalyticsTab({
       id: "overview",
       keywords: ["overview", "summary", "completion", "response rate", "headline", "totals"],
       node: (
-        <AnalyticsBlock id="overview" title="Overview" subtitle="Headline numbers for the current filter.">
+        <AnalyticsBlock id="overview" pinned={pinned.includes("overview")} onTogglePin={() => onTogglePin("overview")} title="Overview" subtitle="Headline numbers for the current filter.">
           <div className="flex flex-wrap items-center justify-between gap-6">
             <div className="grid flex-1 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <StatTile value={subset.length} label="Respondents" hint={`of ${data.completion.arrived} checked in`} />
@@ -305,7 +372,7 @@ function AnalyticsTab({
       keywords: ["readiness", "collaboration readiness", "score", "interest", "distribution", "histogram", "overall interest"],
       node: (
         <AnalyticsBlock
-          id="readiness"
+          id="readiness" pinned={pinned.includes("readiness")} onTogglePin={() => onTogglePin("readiness")}
           title="Collaboration readiness"
           subtitle="A 0–100 score per respondent, blending every willingness answer, breadth of interest, and their 1–5 rating."
         >
@@ -341,7 +408,7 @@ function AnalyticsTab({
       keywords: ["demand", "partnership", "what they want", "collaboration areas", "ranking", "popular", "top areas"],
       node: (
         <AnalyticsBlock
-          id="demand"
+          id="demand" pinned={pinned.includes("demand")} onTogglePin={() => onTogglePin("demand")}
           title="Partnership demand"
           subtitle="Every collaboration area opted into anywhere in the questionnaire, ranked."
           action={<InlineSelect label="Sort" value={demandSort} options={COUNT_SORTS} onChange={setDemandSort} />}
@@ -367,7 +434,7 @@ function AnalyticsTab({
       keywords: ["section", "engagement", "which offers landed", "topic", "theme", "area performance"],
       node: (
         <AnalyticsBlock
-          id="sections"
+          id="sections" pinned={pinned.includes("sections")} onTogglePin={() => onTogglePin("sections")}
           title="Section engagement"
           subtitle="How positively each part of the questionnaire was answered — which offers actually landed."
         >
@@ -385,7 +452,7 @@ function AnalyticsTab({
       keywords: ["industry", "sector", "banking", "consulting", "how different industries view us", "vertical", "segment"],
       node: (
         <AnalyticsBlock
-          id="industry"
+          id="industry" pinned={pinned.includes("industry")} onTogglePin={() => onTogglePin("industry")}
           title="By industry"
           subtitle="How organisations in each sector view a partnership with us."
           action={<InlineSelect label="Sort" value={segmentSort} options={COUNT_SORTS} onChange={setSegmentSort} />}
@@ -399,7 +466,7 @@ function AnalyticsTab({
       keywords: ["role", "seniority", "designation", "how roles view us", "c-suite", "manager", "director", "job title"],
       node: (
         <AnalyticsBlock
-          id="role"
+          id="role" pinned={pinned.includes("role")} onTogglePin={() => onTogglePin("role")}
           title="By role and seniority"
           subtitle="Whether decision-makers and practitioners see the collaboration differently."
           action={<InlineSelect label="Sort" value={segmentSort} options={COUNT_SORTS} onChange={setSegmentSort} />}
@@ -413,7 +480,7 @@ function AnalyticsTab({
       keywords: ["organisation", "organization", "company", "firm", "employer", "account"],
       node: (
         <AnalyticsBlock
-          id="organisation"
+          id="organisation" pinned={pinned.includes("organisation")} onTogglePin={() => onTogglePin("organisation")}
           title="By organisation"
           subtitle="Every organisation that responded, with its aggregate appetite."
           action={<InlineSelect label="Sort" value={segmentSort} options={COUNT_SORTS} onChange={setSegmentSort} />}
@@ -427,7 +494,7 @@ function AnalyticsTab({
       keywords: ["leads", "hot leads", "follow up", "contact", "next steps", "outreach", "priority", "who to call"],
       node: (
         <AnalyticsBlock
-          id="leads"
+          id="leads" pinned={pinned.includes("leads")} onTogglePin={() => onTogglePin("leads")}
           title="Priority follow-ups"
           subtitle="Respondents who asked to be contacted, rated us 4+, or scored 70%+ readiness."
         >
@@ -475,7 +542,7 @@ function AnalyticsTab({
       id: "contactability",
       keywords: ["contact", "mode", "email", "phone", "meeting", "engagement", "how to reach", "preference"],
       node: (
-        <AnalyticsBlock id="contactability" title="Contact preferences" subtitle="How respondents want to be followed up with.">
+        <AnalyticsBlock id="contactability" pinned={pinned.includes("contactability")} onTogglePin={() => onTogglePin("contactability")} title="Contact preferences" subtitle="How respondents want to be followed up with.">
           {contactModes.length
             ? <BarChart total={subset.length} items={contactModes.map((c) => ({ label: c.label, count: c.count }))} />
             : <p className="text-sm text-ink-muted">No contact preferences recorded yet.</p>}
@@ -486,7 +553,7 @@ function AnalyticsTab({
       id: "timeline",
       keywords: ["timeline", "over time", "when", "submissions", "uptake", "trend", "daily"],
       node: (
-        <AnalyticsBlock id="timeline" title="Submissions over time" subtitle="Uptake by day since the form opened.">
+        <AnalyticsBlock id="timeline" pinned={pinned.includes("timeline")} onTogglePin={() => onTogglePin("timeline")} title="Submissions over time" subtitle="Uptake by day since the form opened.">
           <ColumnChart items={timeline} />
         </AnalyticsBlock>
       ),
@@ -553,6 +620,32 @@ function AnalyticsTab({
 
   return (
     <div className="space-y-4">
+      {/* Pinning is a deliberate, saved action: a stray Pin click should not
+          silently rearrange a board someone is presenting from. */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-ink">
+            {pinned.length === 0
+              ? "No charts pinned to your dashboard yet"
+              : `${pinned.length} ${pinned.length === 1 ? "chart" : "charts"} pinned to your dashboard`}
+          </p>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Use Pin on any chart below, then save. Six charts fill a dashboard page.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {dirty && <span className="text-xs font-medium text-accent-ink">Unsaved changes</span>}
+          <Button disabled={!dirty || savingPins} onClick={onSavePins}>
+            {savingPins ? "Saving…" : "Save dashboard"}
+          </Button>
+          <Link to={`/analytics-dashboard?event=${eventId}`}>
+            <Button variant="secondary">
+              <LayoutDashboard className="h-4 w-4" aria-hidden />Open dashboard
+            </Button>
+          </Link>
+        </div>
+      </Card>
+
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" aria-hidden />
         <Input
@@ -596,8 +689,26 @@ function AnalyticsTab({
                 <div className="mt-3 space-y-4">
                   {group.items.map((item) => (
                     <div key={item.id} className="rounded-control bg-page p-4">
-                      <p className="font-medium text-ink">{item.prompt}</p>
-                      <p className="mt-0.5 text-xs text-ink-muted">{item.aggregate.responded ?? 0} answered</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink">{item.prompt}</p>
+                          <p className="mt-0.5 text-xs text-ink-muted">{item.aggregate.responded ?? 0} answered</p>
+                        </div>
+                        {/* Free-text questions are not pinnable: a display board
+                            must not carry verbatim answers with names attached. */}
+                        {item.type !== "TEXT" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="shrink-0"
+                            variant={pinned.includes(questionCardKey(item.id)) ? "primary" : "secondary"}
+                            aria-pressed={pinned.includes(questionCardKey(item.id))}
+                            onClick={() => onTogglePin(questionCardKey(item.id))}
+                          >
+                            {pinned.includes(questionCardKey(item.id)) ? "Pinned" : "Pin"}
+                          </Button>
+                        )}
+                      </div>
                       <div className="mt-3">
                         <QuestionChart aggregate={item.aggregate} />
                       </div>

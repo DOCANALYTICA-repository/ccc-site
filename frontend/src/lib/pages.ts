@@ -37,6 +37,7 @@ export const AdminHub = page(() => import("@/pages/AdminHub"), "AdminHub");
 export const CoursesAdminPage = page(() => import("@/pages/CoursesAdmin"), "CoursesAdminPage");
 export const SurveysAdminPage = page(() => import("@/pages/SurveysAdmin"), "SurveysAdminPage");
 export const SurveyAnalyticsPage = page(() => import("@/pages/SurveyAnalytics"), "SurveyAnalyticsPage");
+export const AnalyticsDashboardPage = page(() => import("@/pages/AnalyticsDashboard"), "AnalyticsDashboardPage");
 
 /** Pull every route chunk in the background so no tab ever waits on a network
  *  round trip to render. Failures are ignored — React.lazy will retry on use. */

@@ -123,6 +123,7 @@ model User {
   catalogGrants          CatalogGrant[]
   surveyResponses        SurveyResponse[]
   checkInSessionsStarted EventCheckInSession[]     @relation("CheckInStartedBy")
+  dashboardCards         AnalyticsDashboardCard[]
 
   @@index([role, isActive])
   @@map("users")
@@ -220,6 +221,7 @@ model Event {
   importBatches   ImportBatch[]
   checkInSessions EventCheckInSession[]
   survey          EventSurvey?
+  dashboardCards  AnalyticsDashboardCard[]
 
   @@map("events")
 }
@@ -647,4 +649,28 @@ model AuditLog {
   @@index([actorId, at])
   @@index([entityType, entityId])
   @@map("audit_log")
+}
+
+/// One analytics chart an admin has pinned to their own dashboard for one
+/// event. Private per user by design: two admins curating the same event's
+/// display would otherwise overwrite each other's layout.
+///
+/// `cardKey` names a block on the analytics screen ("industry", "leads") or a
+/// single question's chart ("question:<uuid>"). It is deliberately a loose
+/// string rather than an enum — the analytics page grows new blocks often, and
+/// a pinned key that no longer resolves is skipped when rendering rather than
+/// breaking the dashboard.
+model AnalyticsDashboardCard {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String   @map("event_id")
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  cardKey   String   @map("card_key")
+  position  Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, eventId, cardKey])
+  @@index([userId, eventId, position])
+  @@map("analytics_dashboard_cards")
 }

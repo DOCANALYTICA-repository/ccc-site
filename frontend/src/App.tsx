@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import {
   AcceptInvite,
   AdminHub,
+  AnalyticsDashboardPage,
   ChangePassword,
   Contacts,
   CourseDetailPage,
@@ -85,6 +86,7 @@ export default function App() {
                     <Route path="/admin" element={<AdminHub />} />
                     <Route path="/surveys-admin" element={<SurveysAdminPage />} />
                     <Route path="/survey-analytics" element={<SurveyAnalyticsPage />} />
+                    <Route path="/analytics-dashboard" element={<AnalyticsDashboardPage />} />
                     <Route path="/courses-admin" element={<CoursesAdminPage />} />
                     <Route path="/contacts" element={<Contacts />} />
                     <Route path="/events" element={<Events />} />

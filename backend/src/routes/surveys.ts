@@ -11,6 +11,7 @@ import {
   type NormalizedAnswer,
 } from "../lib/surveySegments.js";
 import { visibleQuestions } from "../lib/surveyBranching.js";
+import { dashboardSelectionSchema, toCardRows } from "../lib/dashboardCards.js";
 
 export const surveysRouter = Router();
 surveysRouter.use(requireAuth);
@@ -663,6 +664,48 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
       { band: "81–100", count: respondents.filter((r) => r.readiness > 80).length },
     ],
   });
+});
+
+/**
+ * The analytics charts this admin has pinned to their dashboard for one event.
+ *
+ * Selections are per-user by design — two admins curating the same event's
+ * display would otherwise overwrite each other. The dashboard renders straight
+ * from the analytics payload, so this endpoint stores only ordered keys and
+ * never a copy of the numbers, which would go stale the moment anyone submits.
+ */
+surveysRouter.get("/events/:eventId/dashboard", async (req, res) => {
+  const cards = await prisma.analyticsDashboardCard.findMany({
+    where: { userId: req.user!.id, eventId: req.params.eventId },
+    orderBy: { position: "asc" },
+    select: { cardKey: true, position: true },
+  });
+  res.json({ cards });
+});
+
+surveysRouter.put("/events/:eventId/dashboard", async (req, res) => {
+  const parsed = dashboardSelectionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid dashboard selection." });
+
+  const event = await prisma.event.findUnique({ where: { id: req.params.eventId }, select: { id: true } });
+  if (!event) return res.status(404).json({ error: "Event not found." });
+
+  const rows = toCardRows(req.user!.id, req.params.eventId, parsed.data.cardKeys);
+
+  const cards = await prisma.$transaction(async (tx) => {
+    await tx.analyticsDashboardCard.deleteMany({
+      where: { userId: req.user!.id, eventId: req.params.eventId },
+    });
+    if (rows.length) {
+      await tx.analyticsDashboardCard.createMany({ data: rows });
+    }
+    return tx.analyticsDashboardCard.findMany({
+      where: { userId: req.user!.id, eventId: req.params.eventId },
+      orderBy: { position: "asc" },
+      select: { cardKey: true, position: true },
+    });
+  });
+  res.json({ cards });
 });
 
 surveysRouter.get("/events/:eventId/export.csv", async (req, res) => {
