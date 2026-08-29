@@ -16,6 +16,17 @@ import { surveysRouter } from "./routes/surveys.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { requireTrustedOrigin, trustedOrigins } from "./middleware/security.js";
 
+// Express 4 does not forward rejections out of async route handlers, so an
+// unexpected database error surfaces as an unhandled rejection — which Node
+// treats as fatal. Serverless hides that (the instance dies, the next request
+// gets a fresh one), but the Vercel Services preset may run this as a
+// long-lived process, where one transient DB hiccup would take the whole API
+// down until it restarted. Mid-event that means the gate stops working.
+// Staying up with one failed request beats dying with all of them.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
 export function createApp() {
   const app = express();
 
@@ -42,6 +53,17 @@ export function createApp() {
   app.use(cookieParser());
   app.use(express.json({ limit: "8mb" })); // Import batches of 500 rows; see PLAN.md section 5.2.
   app.use(requireTrustedOrigin);
+
+  // Under Vercel's multi-service routing this app is mounted as a service at
+  // /api, and every router below is *also* mounted under /api. If that routing
+  // ever strips the prefix before handing the request over, nothing would match
+  // and every response would be a 404. Re-adding it when absent makes the app
+  // behave identically whether it is reached as a standalone deployment or as a
+  // service — a no-op in the case where the prefix already survived.
+  app.use((req, _res, next) => {
+    if (!/^\/api(\/|$|\?)/.test(req.url)) req.url = `/api${req.url}`;
+    next();
+  });
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
 

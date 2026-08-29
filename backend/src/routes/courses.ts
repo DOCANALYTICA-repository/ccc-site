@@ -172,7 +172,9 @@ coursesRouter.get("/resources/:resourceId/access", async (req, res) => {
   if (resource.externalUrl) return res.json({ url: resource.externalUrl, external: true });
   if (!resource.storagePath) return res.status(404).json({ error: "Resource file is missing." });
   if (resource.storagePath.startsWith(LOCAL_PREFIX)) {
-    const base = `${req.protocol}://${req.get("host")}${req.baseUrl}`;
+    // The public path, not req.baseUrl: the browser must always be sent to
+    // /api/courses, because that is the only prefix routed to this service.
+    const base = `${req.protocol}://${req.get("host")}/api/courses`;
     return res.json({ url: `${base}/file?t=${encodeURIComponent(signFileToken(resource.id))}`, expiresIn: FILE_TOKEN_TTL_SECONDS });
   }
   const supabase = getSupabaseAdmin();

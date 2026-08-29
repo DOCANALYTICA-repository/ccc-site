@@ -50,8 +50,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     role: user.role,
     mustChangePassword: user.mustChangePassword,
   };
-  const passwordAllowed = ["/api/auth/me", "/api/auth/change-password", "/api/auth/logout"];
-  if (user.mustChangePassword && !passwordAllowed.some((path) => req.originalUrl.startsWith(path))) {
+  // originalUrl is captured before app.ts can re-add a stripped /api prefix, so
+  // match with the prefix optional. Getting this wrong locks every account that
+  // must change its password out of the one endpoint that would let it.
+  const path = req.originalUrl.replace(/^\/api/, "");
+  const passwordAllowed = ["/auth/me", "/auth/change-password", "/auth/logout"];
+  if (user.mustChangePassword && !passwordAllowed.some((allowed) => path.startsWith(allowed))) {
     return res.status(428).json({ error: "Change your temporary password to continue.", code: "PASSWORD_CHANGE_REQUIRED" });
   }
   next();
