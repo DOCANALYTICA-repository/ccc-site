@@ -540,6 +540,10 @@ model SurveyTemplateQuestion {
   options    Json?
   section    String?
   position   Int                @default(0)
+  // Position of the question this one follows up on, or null when it always
+  // shows. Positional rather than a row reference because template questions
+  // are replaced wholesale on every edit and have no identity across saves.
+  dependsOnPosition Int?        @map("depends_on_position")
 
   @@index([templateId, position])
   @@map("survey_template_questions")
@@ -572,6 +576,8 @@ model EventSurveyQuestion {
   options  Json?
   section  String?
   position Int                @default(0)
+  /// Copied from the template question; see SurveyTemplateQuestion.
+  dependsOnPosition Int?      @map("depends_on_position")
   answers  SurveyAnswer[]
 
   @@index([surveyId, position])

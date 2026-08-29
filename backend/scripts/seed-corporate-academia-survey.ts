@@ -4,13 +4,18 @@
 // each time, so delete any previous run first if re-seeding.
 import { prisma } from "../src/lib/prisma.js";
 
+// `followsUp` marks a question as a follow-up: it is only shown once the
+// question at that 1-based position has been answered as anything other than
+// a refusal. Positions are 1-based here to match the numbering guests see on
+// the form; they're converted to 0-based `dependsOnPosition` when seeded.
+type Base = { section: string; prompt: string; followsUp?: number };
 type Q =
-  | { section: string; prompt: string; type: "TEXT" }
-  | { section: string; prompt: string; type: "YES_NO" }
-  | { section: string; prompt: string; type: "SCALE_1_5" }
-  | { section: string; prompt: string; type: "SINGLE_SELECT" | "MULTI_SELECT"; options: string[] };
+  | (Base & { type: "TEXT" })
+  | (Base & { type: "YES_NO" })
+  | (Base & { type: "SCALE_1_5" })
+  | (Base & { type: "SINGLE_SELECT" | "MULTI_SELECT"; options: string[] });
 
-const questions: Q[] = [
+export const questions: Q[] = [
   // Section 1: Organisation Profile — intentionally omitted per request.
 
   // Section 2: Experiential Learning & Student Engagement
@@ -20,7 +25,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes, definitely", "Yes, subject to discussion", "Maybe / Need more information", "Not at present"],
   },
   {
-    section: "Experiential Learning & Student Engagement", prompt: "Preferred areas for Capstone Projects", type: "MULTI_SELECT",
+    section: "Experiential Learning & Student Engagement", prompt: "Preferred areas for Capstone Projects", followsUp: 1, type: "MULTI_SELECT",
     options: ["Accounting", "Tax & Auditing", "Finance & Investment", "Banking", "Insurance", "Business Analytics", "Marketing", "Entrepreneurship", "Strategic Management", "Other"],
   },
   {
@@ -29,7 +34,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "Yes, depending on requirements", "We currently offer internships", "We may consider in the future", "Not interested"],
   },
   {
-    section: "Experiential Learning & Student Engagement", prompt: "Internship areas", type: "MULTI_SELECT",
+    section: "Experiential Learning & Student Engagement", prompt: "Internship areas", followsUp: 3, type: "MULTI_SELECT",
     options: ["Finance", "Accounting", "Audit & Taxation", "Investment", "Banking", "Insurance", "Analytics", "Marketing", "HR", "Consulting", "Strategy", "Other"],
   },
 
@@ -40,7 +45,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes, definitely", "Yes, subject to requirements", "We would like to explore this", "Not at present"],
   },
   {
-    section: "Consultancy & Research Collaboration", prompt: "Potential consultancy areas", type: "MULTI_SELECT",
+    section: "Consultancy & Research Collaboration", prompt: "Potential consultancy areas", followsUp: 5, type: "MULTI_SELECT",
     options: ["Market Research", "Business Analysis", "Financial Analysis", "Investment Analysis", "Data Analytics", "Consumer Research", "ESG", "MSME Development", "Strategy", "Process Improvement", "Other"],
   },
   {
@@ -50,7 +55,7 @@ const questions: Q[] = [
   },
   {
     section: "Consultancy & Research Collaboration",
-    prompt: "Potential research areas / challenges you would like to explore",
+    prompt: "Potential research areas / challenges you would like to explore", followsUp: 7,
     type: "TEXT",
   },
 
@@ -61,7 +66,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "Yes, subject to confidentiality arrangements", "Interested in exploring", "Not at present"],
   },
   {
-    section: "Case Writing & Knowledge Creation", prompt: "Preferred case areas", type: "MULTI_SELECT",
+    section: "Case Writing & Knowledge Creation", prompt: "Preferred case areas", followsUp: 9, type: "MULTI_SELECT",
     options: ["Finance", "Investment", "Banking", "Marketing", "Strategy", "Entrepreneurship", "ESG", "Operations", "Leadership", "Other"],
   },
 
@@ -72,7 +77,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes, CSR", "Yes, ESG", "Both CSR & ESG", "Interested in exploring", "Not at present"],
   },
   {
-    section: "CSR & ESG Collaboration", prompt: "Potential CSR/ESG areas", type: "MULTI_SELECT",
+    section: "CSR & ESG Collaboration", prompt: "Potential CSR/ESG areas", followsUp: 11, type: "MULTI_SELECT",
     options: ["Community Development", "MSME Development", "Financial Literacy", "Entrepreneurship Development", "School Education", "Sustainability", "Climate / Environmental Initiatives", "Social Impact Measurement", "ESG Reporting / Assessment", "Other"],
   },
 
@@ -83,7 +88,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "Yes, subject to requirements", "Interested in exploring", "Not at present"],
   },
   {
-    section: "Executive Education & Professional Training", prompt: "Preferred training areas", type: "MULTI_SELECT",
+    section: "Executive Education & Professional Training", prompt: "Preferred training areas", followsUp: 13, type: "MULTI_SELECT",
     options: ["Finance & Financial Management", "Investment & Wealth Management", "Banking", "Accounting & Taxation", "Business Analytics", "AI & Digital Transformation", "ESG & Sustainability", "Leadership", "Strategic Management", "Entrepreneurship", "Other"],
   },
   {
@@ -104,7 +109,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "Yes, subject to availability", "Interested in exploring", "Not at present"],
   },
   {
-    section: "Industry Participation in Academics", prompt: "Potential contributions to curriculum/Board of Studies", type: "MULTI_SELECT",
+    section: "Industry Participation in Academics", prompt: "Potential contributions to curriculum/Board of Studies", followsUp: 17, type: "MULTI_SELECT",
     options: ["Curriculum Design", "Industry Skill Requirements", "Course Content Review", "Emerging Industry Trends", "Assessment Design", "Employability Skills", "Other"],
   },
   {
@@ -113,7 +118,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "No", "Subject to availability"],
   },
   {
-    section: "Industry Participation in Academics", prompt: "Preferred formats for industry expert engagement", type: "MULTI_SELECT",
+    section: "Industry Participation in Academics", prompt: "Preferred formats for industry expert engagement", followsUp: 19, type: "MULTI_SELECT",
     options: ["Guest Lectures", "Weekend Teaching Sessions", "Workshops", "Masterclasses", "Panel Discussions", "Industry Visits", "Mentoring", "Competitions / Hackathons", "Career Talks", "Other"],
   },
   {
@@ -129,7 +134,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "Yes, subject to discussion", "Interested in exploring", "Not at present"],
   },
   {
-    section: "Centre for Applied Finance & Investment (CAFI)", prompt: "Potential CAFI collaboration areas", type: "MULTI_SELECT",
+    section: "Centre for Applied Finance & Investment (CAFI)", prompt: "Potential CAFI collaboration areas", followsUp: 22, type: "MULTI_SELECT",
     options: ["Co-curation of Finance Courses", "Investment & Capital Markets Training", "Bloomberg-based Learning", "Financial Analytics", "Industry Projects", "Research", "Executive Education", "Investment Workshops", "Faculty Development Programmes", "Student Competitions / Challenges", "Other"],
   },
 
@@ -141,11 +146,11 @@ const questions: Q[] = [
     options: ["Student Internships", "Capstone Projects", "Consultancy", "Joint Research", "Case Writing", "CSR Projects", "ESG Projects", "Executive Education / MDPs", "Advisory Board", "Board of Studies", "Curriculum Development", "Guest Lectures", "Workshops", "Mentoring", "Industry Visits", "Placement / Recruitment", "Knowledge Partnership", "Joint Conferences / Events", "Centre-level Collaboration", "Other"],
   },
   {
-    section: "Preferred Nature of Partnership", prompt: "At what level would your organisation prefer to collaborate?",
+    section: "Preferred Nature of Partnership", prompt: "At what level would your organisation prefer to collaborate?", followsUp: 24,
     type: "SINGLE_SELECT", options: ["One-time engagement", "Short-term project-based collaboration", "Annual collaboration", "Long-term strategic partnership", "Open to exploring different models"],
   },
   {
-    section: "Preferred Nature of Partnership", prompt: "Preferred mode of engagement",
+    section: "Preferred Nature of Partnership", prompt: "Preferred mode of engagement", followsUp: 24,
     type: "SINGLE_SELECT", options: ["In-person", "Online", "Hybrid", "No preference"],
   },
 
@@ -166,7 +171,7 @@ const questions: Q[] = [
     type: "SINGLE_SELECT", options: ["Yes", "No"],
   },
   {
-    section: "Collaboration Opportunities", prompt: "Preferred mode of contact",
+    section: "Collaboration Opportunities", prompt: "Preferred mode of contact", followsUp: 29,
     type: "SINGLE_SELECT", options: ["Email", "Phone", "Meeting", "Online meeting"],
   },
 
@@ -230,6 +235,7 @@ async function main() {
           section: q.section,
           options: "options" in q ? q.options : undefined,
           position,
+          dependsOnPosition: q.followsUp != null ? q.followsUp - 1 : null,
         })),
       },
     },
@@ -238,6 +244,10 @@ async function main() {
   console.log(`Created template ${template.id} with ${template.questions.length} questions.`);
 }
 
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+// The question list is also imported by backfill-survey-followups.ts, so only
+// seed when this file is the script actually being run.
+if (process.argv[1] && process.argv[1].endsWith("seed-corporate-academia-survey.ts")) {
+  main()
+    .catch((e) => { console.error(e); process.exit(1); })
+    .finally(() => prisma.$disconnect());
+}

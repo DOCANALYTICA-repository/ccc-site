@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
+import { visibleQuestions } from "@/lib/surveyBranching";
 
 type QuestionType = "YES_NO" | "SINGLE_SELECT" | "MULTI_SELECT" | "TEXT" | "SCALE_1_5";
 
@@ -14,6 +15,8 @@ interface Question {
   type: QuestionType;
   options: string[] | null;
   section: string | null;
+  position: number;
+  dependsOnPosition: number | null;
 }
 
 type AnswerValue = boolean | string | string[] | number;
@@ -54,20 +57,27 @@ export function EventSurveyPage() {
     });
   }, [id]);
 
+  // Follow-up questions stay out of the form until the question they hang off
+  // has been answered as something other than a refusal, so nobody is asked
+  // which areas they'd like to collaborate in right after saying they wouldn't.
+  const visible = useMemo(
+    () => (data ? visibleQuestions(data.survey.questions, answers) : []),
+    [data, answers],
+  );
+
   const sections = useMemo(() => {
-    if (!data) return [];
     const order: string[] = [];
     const map = new Map<string, Question[]>();
-    for (const q of data.survey.questions) {
+    for (const q of visible) {
       const key = q.section ?? "";
       if (!map.has(key)) { map.set(key, []); order.push(key); }
       map.get(key)!.push(q);
     }
     return order.map((key) => ({ title: key, questions: map.get(key)! }));
-  }, [data]);
+  }, [visible]);
 
-  const answeredCount = data ? data.survey.questions.filter((q) => isAnswered(q, answers[q.id])).length : 0;
-  const total = data?.survey.questions.length ?? 0;
+  const answeredCount = visible.filter((q) => isAnswered(q, answers[q.id])).length;
+  const total = visible.length;
 
   function setAnswer(questionId: string, value: AnswerValue) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -83,12 +93,14 @@ export function EventSurveyPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!data || answeredCount !== total) return;
+    if (!data || total === 0 || answeredCount !== total) return;
     setSaving(true);
     setError(null);
     try {
       await api.put(`/surveys/mine/${id}`, {
-        answers: data.survey.questions.map((q) => ({ questionId: q.id, value: answers[q.id] })),
+        // Only what they were actually shown: answers left behind by a
+        // follow-up they later gated shut are dropped, not submitted.
+        answers: visible.map((q) => ({ questionId: q.id, value: answers[q.id] })),
       });
       navigate("/");
     } catch {
@@ -133,10 +145,15 @@ export function EventSurveyPage() {
             )}
             <div className="space-y-3">
               {section.questions.map((question) => {
-                const index = data.survey.questions.indexOf(question);
+                const index = visible.indexOf(question);
                 return (
                   <Card key={question.id} className="p-5">
                     <fieldset>
+                      {question.dependsOnPosition !== null && (
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+                          Follow-up
+                        </p>
+                      )}
                       <legend className="font-medium text-ink">
                         <span className="mr-2 text-accent-ink">{index + 1}.</span>
                         {question.prompt}

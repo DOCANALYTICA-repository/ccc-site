@@ -20,10 +20,15 @@ const TYPE_LABELS: Record<QuestionType, string> = {
 };
 
 interface DraftQuestion {
+  // Identity that survives reordering and deletion, so a follow-up keeps
+  // pointing at the same question rather than at whatever slot it now holds.
+  key: string;
   prompt: string;
   type: QuestionType;
   options: string[];
   section: string;
+  /** Key of the question this one follows up on, or null when always shown. */
+  dependsOn: string | null;
 }
 
 interface TemplateQuestion {
@@ -32,6 +37,8 @@ interface TemplateQuestion {
   type: QuestionType;
   options: string[] | null;
   section: string | null;
+  position: number;
+  dependsOnPosition: number | null;
 }
 interface Template { id: string; name: string; questions: TemplateQuestion[] }
 interface Event { id: string; name: string }
@@ -43,8 +50,11 @@ interface Report {
   completion: { arrived: number; submitted: number; outstanding: number };
 }
 
+let questionKeySeq = 0;
+function nextQuestionKey() { return `q${++questionKeySeq}`; }
+
 function emptyQuestion(): DraftQuestion {
-  return { prompt: "", type: "YES_NO", options: [], section: "" };
+  return { key: nextQuestionKey(), prompt: "", type: "YES_NO", options: [], section: "", dependsOn: null };
 }
 
 export function SurveysAdminPage() {
@@ -89,7 +99,14 @@ export function SurveysAdminPage() {
     setDraftQuestions((qs) => qs.map((q, i) => (i === index ? { ...q, ...patch } : q)));
   }
   function addQuestion() { setDraftQuestions((qs) => [...qs, emptyQuestion()]); }
-  function removeQuestion(index: number) { setDraftQuestions((qs) => qs.filter((_, i) => i !== index)); }
+  function removeQuestion(index: number) {
+    setDraftQuestions((qs) => {
+      const removed = qs[index]?.key;
+      // Anything that hung off the removed question becomes unconditional
+      // rather than silently unreachable.
+      return qs.filter((_, i) => i !== index).map((q) => (q.dependsOn === removed ? { ...q, dependsOn: null } : q));
+    });
+  }
   function updateOption(qIndex: number, oIndex: number, value: string) {
     setDraftQuestions((qs) => qs.map((q, i) => i === qIndex ? { ...q, options: q.options.map((o, j) => j === oIndex ? value : o) } : q));
   }
@@ -114,12 +131,15 @@ export function SurveysAdminPage() {
   function editTemplate(template: Template) {
     setEditingId(template.id);
     setName(template.name);
+    const keysByPosition = new Map(template.questions.map((q) => [q.position, nextQuestionKey()]));
     setDraftQuestions(
       template.questions.map((q) => ({
+        key: keysByPosition.get(q.position)!,
         prompt: q.prompt,
         type: q.type,
         options: q.options ?? [],
         section: q.section ?? "",
+        dependsOn: q.dependsOnPosition != null ? keysByPosition.get(q.dependsOnPosition) ?? null : null,
       })),
     );
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -147,15 +167,25 @@ export function SurveysAdminPage() {
   async function saveTemplate(e: FormEvent) {
     e.preventDefault();
     const needsOptions = (t: QuestionType) => t === "SINGLE_SELECT" || t === "MULTI_SELECT";
-    const cleaned = draftQuestions
-      .filter((q) => q.prompt.trim())
-      .map((q) => ({
-        prompt: q.prompt.trim(),
-        type: q.type,
-        section: q.section.trim() || null,
-        options: needsOptions(q.type) ? q.options.map((o) => o.trim()).filter(Boolean) : null,
-      }));
+    const kept = draftQuestions.filter((q) => q.prompt.trim());
+    const indexByKey = new Map(kept.map((q, index) => [q.key, index]));
+    const cleaned = kept.map((q, index) => ({
+      prompt: q.prompt.trim(),
+      type: q.type,
+      section: q.section.trim() || null,
+      options: needsOptions(q.type) ? q.options.map((o) => o.trim()).filter(Boolean) : null,
+      dependsOnPosition: q.dependsOn != null ? indexByKey.get(q.dependsOn) ?? null : null,
+      dependsOnIndex: index,
+    }));
     if (!cleaned.length) { push("Add at least one question.", "error"); return; }
+    // A follow-up has to sit below the question it depends on — otherwise the
+    // form would have to decide whether to show it before it had an answer.
+    const stranded = cleaned.find((q) => q.dependsOnPosition != null && q.dependsOnPosition >= q.dependsOnIndex);
+    if (stranded) {
+      push(`"${stranded.prompt}" follows up on a question that now comes after it. Move it down, or clear its condition.`, "error");
+      return;
+    }
+    const payload = cleaned.map(({ dependsOnIndex: _index, ...q }) => q);
     if (cleaned.some((q) => needsOptions(q.type) && (q.options?.length ?? 0) < 2)) {
       push("Choice questions need at least two options.", "error");
       return;
@@ -163,10 +193,10 @@ export function SurveysAdminPage() {
     setSaving(true);
     try {
       if (editingId) {
-        await api.put(`/surveys/templates/${editingId}`, { name, questions: cleaned });
+        await api.put(`/surveys/templates/${editingId}`, { name, questions: payload });
         push("Template updated. Re-attach it to apply the changes to an event.", "success");
       } else {
-        await api.post("/surveys/templates", { name, questions: cleaned });
+        await api.post("/surveys/templates", { name, questions: payload });
         push("Questionnaire template created.", "success");
       }
       cancelEdit();
@@ -233,7 +263,7 @@ export function SurveysAdminPage() {
 
             <div className="space-y-3">
               {draftQuestions.map((q, i) => (
-                <div key={i} className="rounded-control border border-hairline bg-page p-3">
+                <div key={q.key} className="rounded-control border border-hairline bg-page p-3">
                   <div className="flex items-start gap-2">
                     <span className="mt-3 shrink-0 text-xs font-semibold text-ink-muted">{i + 1}.</span>
                     <div className="flex-1 space-y-2">
@@ -259,6 +289,21 @@ export function SurveysAdminPage() {
                           onChange={(e) => updateQuestion(i, { section: e.target.value })}
                         />
                       </div>
+                      <label className="flex items-center gap-2 text-xs text-ink-muted">
+                        <span className="shrink-0">Show only if</span>
+                        <select
+                          className="h-9 flex-1 rounded-control border border-hairline bg-surface px-2 text-sm text-ink"
+                          value={q.dependsOn ?? ""}
+                          onChange={(e) => updateQuestion(i, { dependsOn: e.target.value || null })}
+                        >
+                          <option value="">Always show this question</option>
+                          {draftQuestions.slice(0, i).map((parent, pi) => (
+                            <option key={parent.key} value={parent.key}>
+                              {pi + 1}. {parent.prompt.trim() || "(untitled question)"} isn't answered "no"
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       {(q.type === "SINGLE_SELECT" || q.type === "MULTI_SELECT") && (
                         <div className="space-y-1.5 pl-1">
                           {q.options.map((option, oi) => (

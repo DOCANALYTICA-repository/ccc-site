@@ -10,6 +10,7 @@ import {
   wordFrequencies,
   type NormalizedAnswer,
 } from "../lib/surveySegments.js";
+import { visibleQuestions } from "../lib/surveyBranching.js";
 
 export const surveysRouter = Router();
 surveysRouter.use(requireAuth);
@@ -21,10 +22,27 @@ const templateQuestionSchema = z.object({
   type: questionTypeSchema.default("YES_NO"),
   options: z.array(z.string().trim().min(1).max(200)).max(30).nullish(),
   section: z.string().trim().max(200).nullish(),
+  // Index of the question this one follows up on, within the same submitted
+  // list. Must point backwards so the parent is always answered first.
+  dependsOnPosition: z.number().int().min(0).max(99).nullish(),
 }).refine(
   (q) => (q.type === "SINGLE_SELECT" || q.type === "MULTI_SELECT" ? (q.options?.length ?? 0) >= 2 : true),
   { message: "Select-type questions need at least two options.", path: ["options"] },
 );
+
+/**
+ * A follow-up must hang off a question that comes before it — otherwise the
+ * form could never decide whether to show it, and a pair of questions could
+ * gate each other shut.
+ */
+function dependencyError(questions: Array<{ dependsOnPosition?: number | null }>): string | null {
+  for (const [index, question] of questions.entries()) {
+    const parent = question.dependsOnPosition;
+    if (parent == null) continue;
+    if (parent >= index) return `Question ${index + 1} can only follow up on an earlier question.`;
+  }
+  return null;
+}
 
 /** Validates one answer against its question's type, returning the columns
  * to persist on SurveyAnswer (only the field matching the type is set). */
@@ -100,16 +118,24 @@ surveysRouter.put("/mine/:eventId", async (req, res) => {
     return res.status(403).json({ error: "This questionnaire is not available." });
   }
   const byId = new Map(survey.questions.map((q) => [q.id, q]));
-  if (parsed.data.answers.length !== byId.size || parsed.data.answers.some((a) => !byId.has(a.questionId))) {
-    return res.status(400).json({ error: "Every current question must be answered exactly once." });
+  const seen = new Set<string>();
+  if (parsed.data.answers.some((a) => !byId.has(a.questionId) || !seen.add(a.questionId))) {
+    return res.status(400).json({ error: "Every current question must be answered at most once." });
   }
-  const rows: Array<{ questionId: string; value: boolean | null; textValue: string | null; scaleValue: number | null; selectedOptions: string[] | null }> = [];
+  const validated = new Map<string, NormalizedAnswer>();
   for (const answer of parsed.data.answers) {
     const question = byId.get(answer.questionId)!;
     const result = validateAnswer(question, answer.value);
     if (!result.ok) return res.status(400).json({ error: `${question.prompt}: ${result.error}` });
-    rows.push({ questionId: answer.questionId, ...result.data });
+    validated.set(answer.questionId, result.data);
   }
+  // Follow-ups the respondent never saw aren't required — and answers to
+  // questions they've since gated shut are dropped rather than stored, so a
+  // changed mind upstream can't leave a stale reply hanging underneath it.
+  const visible = visibleQuestions(survey.questions, validated);
+  const missing = visible.find((q) => !validated.has(q.id));
+  if (missing) return res.status(400).json({ error: `${missing.prompt}: this question needs an answer.` });
+  const rows = visible.map((q) => ({ questionId: q.id, ...validated.get(q.id)! }));
   const response = await prisma.$transaction(async (tx) => {
     const value = await tx.surveyResponse.upsert({
       where: { invitationId: invitation.id },
@@ -149,6 +175,8 @@ surveysRouter.post("/templates", async (req, res) => {
     questions: z.array(templateQuestionSchema).min(1).max(100),
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid template." });
+  const badDependency = dependencyError(parsed.data.questions);
+  if (badDependency) return res.status(400).json({ error: badDependency });
   const template = await prisma.surveyTemplate.create({
     data: {
       name: parsed.data.name,
@@ -160,6 +188,7 @@ surveysRouter.post("/templates", async (req, res) => {
           options: q.options ?? undefined,
           section: q.section ?? undefined,
           position,
+          dependsOnPosition: q.dependsOnPosition ?? null,
         })),
       },
     },
@@ -184,6 +213,8 @@ surveysRouter.put("/templates/:id", async (req, res) => {
     questions: z.array(templateQuestionSchema).min(1).max(100),
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid template." });
+  const badDependency = dependencyError(parsed.data.questions);
+  if (badDependency) return res.status(400).json({ error: badDependency });
   const existing = await prisma.surveyTemplate.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: "Template not found." });
   const template = await prisma.$transaction(async (tx) => {
@@ -203,6 +234,7 @@ surveysRouter.put("/templates/:id", async (req, res) => {
             options: q.options ?? undefined,
             section: q.section ?? undefined,
             position,
+            dependsOnPosition: q.dependsOnPosition ?? null,
           })),
         },
       },
@@ -249,6 +281,7 @@ surveysRouter.post("/events/:eventId/attach", async (req, res) => {
           options: q.options ?? undefined,
           section: q.section ?? undefined,
           position: q.position,
+          dependsOnPosition: q.dependsOnPosition,
         })),
       },
     },
@@ -389,6 +422,7 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
     section: q.section,
     options: (q.options as string[] | null) ?? null,
     position: q.position,
+    dependsOnPosition: q.dependsOnPosition,
   }));
 
   const normalize = (a: { value: boolean | null; textValue: string | null; scaleValue: number | null; selectedOptions: unknown }): NormalizedAnswer => ({
@@ -435,7 +469,9 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
       industry: classifyIndustry(contact.organization, tags),
       role: classifyRole(contact.designation),
       interest: interestQuestion ? answerMap.get(interestQuestion.id)?.scaleValue ?? null : null,
-      readiness: readinessScore(questions, answerMap),
+      // Scored against the questions this respondent was actually shown —
+      // follow-ups they never saw shouldn't count against their readiness.
+      readiness: readinessScore(visibleQuestions(questions, answerMap), answerMap),
       wantsContact: contactAnswer ? classifyOptionSentiment(contactAnswer) === "positive" : false,
       preferredContactMode: contactModeQuestion ? answerMap.get(contactModeQuestion.id)?.selectedOptions?.[0] ?? null : null,
       answers,
@@ -533,22 +569,28 @@ surveysRouter.get("/events/:eventId/analytics", async (req, res) => {
     if (!sectionQuestions.has(key)) { sectionQuestions.set(key, []); sectionOrder.push(key); }
     sectionQuestions.get(key)!.push(question);
   }
+  // Rebuilt across the whole form, not per section: a follow-up's parent can
+  // sit in another section, so visibility has to be worked out on the full
+  // question list before it's sliced up.
+  const perRespondent = respondents.map((respondent) => {
+    const answerMap = new Map(
+      questions.map((q) => {
+        const value = respondent.answers[q.id];
+        return [q.id, {
+          value: typeof value === "boolean" ? value : null,
+          textValue: typeof value === "string" ? value : null,
+          scaleValue: typeof value === "number" ? value : null,
+          selectedOptions: Array.isArray(value) ? value : typeof value === "string" && q.type === "SINGLE_SELECT" ? [value] : null,
+        } as NormalizedAnswer];
+      }),
+    );
+    return { answerMap, visibleIds: new Set(visibleQuestions(questions, answerMap).map((q) => q.id)) };
+  });
+
   const sectionEngagement = sectionOrder.map((section) => {
     const inSection = sectionQuestions.get(section)!;
-    const scores = respondents.map((respondent) => {
-      const answerMap = new Map(
-        inSection.map((q) => {
-          const value = respondent.answers[q.id];
-          return [q.id, {
-            value: typeof value === "boolean" ? value : null,
-            textValue: typeof value === "string" ? value : null,
-            scaleValue: typeof value === "number" ? value : null,
-            selectedOptions: Array.isArray(value) ? value : typeof value === "string" && q.type === "SINGLE_SELECT" ? [value] : null,
-          } as NormalizedAnswer];
-        }),
-      );
-      return readinessScore(inSection, answerMap);
-    });
+    const scores = perRespondent.map(({ answerMap, visibleIds }) =>
+      readinessScore(inSection.filter((q) => visibleIds.has(q.id)), answerMap));
     return { section, score: Math.round(average(scores)), questions: inSection.length };
   }).sort((a, b) => b.score - a.score);
 
