@@ -27,16 +27,16 @@ interface Entry {
 }
 
 const SYLLABI: Entry[] = [
-  { code: "BCOM", program: "B.Com.", title: "B.Com. — Syllabus", file: "bcom.pdf" },
-  { code: "BCOM-HON", program: "B.Com. (Honours / Honours with Research)", title: "B.Com. (Honours / Honours with Research) — Syllabus", file: "bcom-honours.pdf" },
-  { code: "BCOM-AT", program: "B.Com. Accountancy and Taxation (Honours / Honours with Research)", title: "B.Com. Accountancy and Taxation (Honours / Honours with Research) — Syllabus", file: "bcom-accountancy-and-taxation-honours.pdf" },
-  { code: "BCOM-AFA", program: "B.Com. Applied Finance and Analytics (Honours / Honours with Research)", title: "B.Com. Applied Finance and Analytics (Honours / Honours with Research) — Syllabus", file: "bcom-applied-finance-and-analytics-honours.pdf" },
-  { code: "BCOM-FI", program: "B.Com. Finance and Investment", title: "B.Com. Finance and Investment — Syllabus", file: "bcom-finance-and-investment.pdf" },
-  { code: "BCOM-FI-HON", program: "B.Com. Finance and Investment (Honours / Honours with Research)", title: "B.Com. Finance and Investment (Honours / Honours with Research) — Syllabus", file: "bcom-finance-and-investment-honours.pdf" },
-  { code: "BCOM-SF", program: "B.Com. Strategic Finance (Honours / Honours with Research)", title: "B.Com. Strategic Finance (Honours / Honours with Research) — Syllabus", file: "bcom-strategic-finance-honours.pdf" },
-  { code: "BCOM-WI", program: "B.Com. (Work Integrated)", title: "B.Com. (Work Integrated) — Syllabus", file: "bcom-work-integrated.pdf" },
-  { code: "BSC-AA", program: "B.Sc. Accountancy and Analytics", title: "B.Sc. Accountancy and Analytics — Syllabus", file: "bsc-accountancy-and-analytics.pdf" },
-  { code: "MCOM", program: "M.Com.", title: "M.Com. — Syllabus", file: "mcom.pdf" },
+  { code: "BCOM", program: "B.Com.", title: "B.Com.", file: "bcom.pdf" },
+  { code: "BCOM-HON", program: "B.Com. (Honours / Honours with Research)", title: "B.Com. (Honours / Honours with Research)", file: "bcom-honours.pdf" },
+  { code: "BCOM-AT", program: "B.Com. Accountancy and Taxation (Honours / Honours with Research)", title: "B.Com. Accountancy and Taxation (Honours / Honours with Research)", file: "bcom-accountancy-and-taxation-honours.pdf" },
+  { code: "BCOM-AFA", program: "B.Com. Applied Finance and Analytics (Honours / Honours with Research)", title: "B.Com. Applied Finance and Analytics (Honours / Honours with Research)", file: "bcom-applied-finance-and-analytics-honours.pdf" },
+  { code: "BCOM-FI", program: "B.Com. Finance and Investment", title: "B.Com. Finance and Investment", file: "bcom-finance-and-investment.pdf" },
+  { code: "BCOM-FI-HON", program: "B.Com. Finance and Investment (Honours / Honours with Research)", title: "B.Com. Finance and Investment (Honours / Honours with Research)", file: "bcom-finance-and-investment-honours.pdf" },
+  { code: "BCOM-SF", program: "B.Com. Strategic Finance (Honours / Honours with Research)", title: "B.Com. Strategic Finance (Honours / Honours with Research)", file: "bcom-strategic-finance-honours.pdf" },
+  { code: "BCOM-WI", program: "B.Com. (Work Integrated)", title: "B.Com. (Work Integrated)", file: "bcom-work-integrated.pdf" },
+  { code: "BSC-AA", program: "B.Sc. Accountancy and Analytics", title: "B.Sc. Accountancy and Analytics", file: "bsc-accountancy-and-analytics.pdf" },
+  { code: "MCOM", program: "M.Com.", title: "M.Com.", file: "mcom.pdf" },
 ];
 
 async function main() {
