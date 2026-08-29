@@ -99,10 +99,15 @@ coursesRouter.get("/file", async (req, res) => {
   // Helmet's app-wide X-Frame-Options and default-src 'none' would both block
   // the frontend from embedding this: the first forbids the frame outright,
   // and the second starves the browser's built-in PDF viewer of the resources
-  // it renders itself with, leaving a blank pane. frame-ancestors, scoped to
-  // the configured frontend origins, is the whole policy this response needs.
+  // it renders itself with, leaving a blank pane. frame-ancestors is the whole
+  // policy this response needs. 'self' comes first because the frontend is
+  // served from this same deployment now, so the embedding page and this file
+  // share an origin; FRONTEND_ORIGIN still covers a separately hosted frontend.
   res.removeHeader("X-Frame-Options");
-  res.setHeader("Content-Security-Policy", `frame-ancestors ${trustedOrigins().join(" ")}`);
+  res.setHeader(
+    "Content-Security-Policy",
+    `frame-ancestors 'self' ${trustedOrigins().join(" ")}`,
+  );
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Content-Type", resource.mimeType ?? "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${resource.title.replace(/[^a-zA-Z0-9 ._-]/g, "")}.pdf"`);
