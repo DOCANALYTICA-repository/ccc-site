@@ -12,13 +12,7 @@
     },
     "backend": {
       "root": "backend",
-      "framework": "express",
-      "entrypoint": "src/app.ts",
-      "functions": {
-        "src/app.ts": {
-          "includeFiles": "assets/**"
-        }
-      }
+      "framework": "express"
     }
   },
   "rewrites": [

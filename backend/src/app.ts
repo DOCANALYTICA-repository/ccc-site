@@ -27,7 +27,7 @@ process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection:", reason);
 });
 
-export function createApp() {
+function createApp() {
   const app = express();
 
   app.set("trust proxy", 1);
@@ -95,7 +95,8 @@ export function createApp() {
 
 /** Vercel detects the Express entrypoint by scanning app/index/server (and
  * their src/ equivalents) for the first file that imports `express`, which is
- * this one — src/server.ts only imports the factory. The detected file has to
- * default-export the app or listen on a port, so export it here. server.ts
- * keeps calling createApp() for the local listener. */
+ * this one — src/server.ts only imports it back. It bundles that file with
+ * rollup and expects the app as the module's default export, so this is the
+ * *only* export: adding a named one alongside it makes the bundle's default
+ * land under `.default`, which is not what the runtime unwraps. */
 export default createApp();
