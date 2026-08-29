@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { BarChart3, Download, LayoutDashboard, Search, Users } from "lucide-react";
 import { api, downloadFile } from "@/lib/api";
 import { useQuery } from "@/hooks/useQuery";
@@ -7,6 +7,7 @@ import { questionCardKey } from "@/lib/analyticsCards";
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { BarChart, ColumnChart, Donut, StackedBar, StatTile } from "@/components/ui/BarChart";
 import { AnalyticsBlock, InlineSelect } from "@/components/surveys/AnalyticsBlock";
@@ -40,6 +41,7 @@ interface EventOption { id: string; name: string }
 
 export function SurveyAnalyticsPage() {
   const { push } = useToast();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [eventId, setEventId] = useState(params.get("event") ?? "");
   const tab: Tab = params.get("tab") === "responses" ? "responses" : "analytics";
@@ -70,6 +72,8 @@ export function SurveyAnalyticsPage() {
   );
   const [pinned, setPinned] = useState<string[] | null>(null);
   const [savingPins, setSavingPins] = useState(false);
+  /** Where the admin tried to go while pins were unsaved, held until they choose. */
+  const [pendingLeave, setPendingLeave] = useState<string | null>(null);
   const savedPinned = useMemo(
     () => (dashboardQuery.data?.cards ?? []).map((c) => c.cardKey),
     [dashboardQuery.data],
@@ -97,6 +101,9 @@ export function SurveyAnalyticsPage() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
+  // Clicking away with unsaved pins opens a dialog offering all three answers
+  // — save and go, discard and go, or stay — rather than a browser confirm,
+  // which only offers "leave" and "stay" and makes discarding the default.
   useEffect(() => {
     if (!dirty) return;
     function onClick(e: MouseEvent) {
@@ -106,10 +113,9 @@ export function SurveyAnalyticsPage() {
       // link is where an admin naturally goes to check their selection.
       if (!href || !href.startsWith("/")) return;
       if (href.startsWith("/survey-analytics") || href.startsWith("/analytics-dashboard")) return;
-      if (!window.confirm("You have unsaved dashboard changes. Leave without saving?")) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      e.preventDefault();
+      e.stopPropagation();
+      setPendingLeave(href);
     }
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
@@ -136,8 +142,10 @@ export function SurveyAnalyticsPage() {
     });
   }
 
-  async function saveDashboard() {
-    if (!eventId) return;
+  /** Returns whether the save actually landed, so a caller waiting to navigate
+   *  does not leave the page on a failed request. */
+  async function saveDashboard(): Promise<boolean> {
+    if (!eventId) return false;
     setSavingPins(true);
     try {
       await api.put(`/surveys/events/${eventId}/dashboard`, { cardKeys: effectivePinned });
@@ -145,11 +153,27 @@ export function SurveyAnalyticsPage() {
       // Hand control back to server state so the two cannot drift apart.
       setPinned(null);
       push("Dashboard updated.", "success");
+      return true;
     } catch {
       push("Couldn't save the dashboard selection.", "error");
+      return false;
     } finally {
       setSavingPins(false);
     }
+  }
+
+  async function saveThenLeave() {
+    const destination = pendingLeave;
+    if (!(await saveDashboard())) return; // stay put and keep the edits
+    setPendingLeave(null);
+    if (destination) navigate(destination);
+  }
+
+  function discardThenLeave() {
+    const destination = pendingLeave;
+    setPinned(null); // drop the local edits, back to what the server has
+    setPendingLeave(null);
+    if (destination) navigate(destination);
   }
 
   const filtered = useMemo(
@@ -268,6 +292,26 @@ export function SurveyAnalyticsPage() {
           )}
         </>
       )}
+
+      <Dialog
+        open={pendingLeave !== null}
+        // Dismissing (Escape, the X, or the overlay) means "stay here", which
+        // is the safe answer — it keeps the edits and cancels the navigation.
+        onOpenChange={(open) => { if (!open) setPendingLeave(null); }}
+        title="Save your dashboard changes?"
+        description={
+          `You pinned ${effectivePinned.length} ${effectivePinned.length === 1 ? "chart" : "charts"} but haven't saved yet. ` +
+          "Leaving now would discard the change."
+        }
+      >
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={() => setPendingLeave(null)}>Stay here</Button>
+          <Button variant="secondary" onClick={discardThenLeave}>Discard and leave</Button>
+          <Button disabled={savingPins} onClick={saveThenLeave}>
+            {savingPins ? "Saving…" : "Save and leave"}
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
