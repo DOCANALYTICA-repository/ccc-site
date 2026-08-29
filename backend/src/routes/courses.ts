@@ -2,7 +2,6 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
@@ -25,7 +24,7 @@ const LOCAL_PREFIX = "local:";
  * includeFiles rule in vercel.json. Rather than guess, probe the candidates
  * once at module load. */
 const ASSETS_ROOT = (() => {
-  const here = path.dirname(fileURLToPath(import.meta.url));
+  const here = __dirname;
   const candidates = [
     path.resolve(here, "../../assets"), // src/routes/… (tsx, dev)
     path.resolve(here, "../../../assets"), // dist/src/routes/… (tsc build)

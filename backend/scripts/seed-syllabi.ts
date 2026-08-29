@@ -1,7 +1,6 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { prisma } from "../src/lib/prisma.js";
 
 /** Publishes the Department of Commerce syllabi as department-wide catalogs.
@@ -18,7 +17,7 @@ import { prisma } from "../src/lib/prisma.js";
 const ACADEMIC_YEAR = "2026";
 const VERSION = "1.0";
 
-const ASSETS_DIR = path.resolve(fileURLToPath(new URL("../assets/syllabus", import.meta.url)));
+const ASSETS_DIR = path.resolve(__dirname, "../assets/syllabus");
 
 interface Entry {
   code: string;
