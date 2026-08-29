@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -92,3 +93,10 @@ export function createApp() {
 
   return app;
 }
+
+/** Vercel detects the Express entrypoint by scanning app/index/server (and
+ * their src/ equivalents) for the first file that imports `express`, which is
+ * this one — src/server.ts only imports the factory. The detected file has to
+ * default-export the app or listen on a port, so export it here. server.ts
+ * keeps calling createApp() for the local listener. */
+export default createApp();

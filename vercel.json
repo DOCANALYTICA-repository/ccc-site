@@ -1,37 +1,40 @@
 {
-    "services": {
-        "frontend": {
-            "root": "frontend",
-            "framework": "vite",
-            "rewrites": [
-                { "source": "/(.*)", "destination": "/index.html" }
-            ]
-        },
-        "backend": {
-            "root": "backend",
-            "framework": "express",
-            "entrypoint": "src/server.ts",
-            "functions": {
-                "src/server.ts": {
-                    "includeFiles": "assets/**"
-                }
-            }
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
         }
+      ]
     },
-    "rewrites": [
-        {
-            "source": "/api(/.*)?",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/(.*)",
-            "destination": {
-                "type": "service",
-                "service": "frontend"
-            }
+    "backend": {
+      "root": "backend",
+      "framework": "express",
+      "entrypoint": "src/app.ts",
+      "functions": {
+        "src/app.ts": {
+          "includeFiles": "assets/**"
         }
-    ]
+      }
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend"
+      }
+    }
+  ]
 }
