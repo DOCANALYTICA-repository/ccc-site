@@ -12,7 +12,8 @@
     },
     "backend": {
       "root": "backend",
-      "framework": "express"
+      "framework": "express",
+      "buildCommand": "prisma generate"
     }
   },
   "rewrites": [
