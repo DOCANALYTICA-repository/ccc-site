@@ -107,7 +107,12 @@ function CommunityHome() {
                       Declined
                     </span>
                   )}
-                  {inv.status === "CONFIRMED" && <Link to="/check-in"><Button size="sm" variant="secondary">Check in</Button></Link>}
+                  {/* Guests no longer check themselves in — a student POC
+                      marks arrivals at the desk — so this says what to expect
+                      rather than offering an action that no longer exists. */}
+                  {inv.status === "CONFIRMED" && (
+                    <span className="text-xs text-ink-muted">Check in at the registration desk on arrival.</span>
+                  )}
                   {inv.status === "ARRIVED_IN_CAMPUS" && inv.event.survey?.status === "OPEN" && (
                     <Link to={`/events/${inv.event.id}/survey`}><Button size="sm">Complete form</Button></Link>
                   )}

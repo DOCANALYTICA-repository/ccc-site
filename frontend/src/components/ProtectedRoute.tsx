@@ -1,7 +1,8 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import type { Role } from "@/lib/types";
 
-export function ProtectedRoute({ roles, allowPasswordChange = false }: { roles?: Array<"ADMIN" | "STAFF" | "MEMBER" | "GUEST">; allowPasswordChange?: boolean }) {
+export function ProtectedRoute({ roles, allowPasswordChange = false }: { roles?: Role[]; allowPasswordChange?: boolean }) {
   const { user, loading } = useAuth();
 
   if (loading) return <div className="flex min-h-dvh items-center justify-center text-sm text-ink-muted">Loading…</div>;

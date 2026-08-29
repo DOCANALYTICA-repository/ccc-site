@@ -13,6 +13,8 @@ datasource db {
 enum Role {
   ADMIN
   STAFF
+  FACULTY
+  STUDENT
   MEMBER
   GUEST
 }
@@ -28,6 +30,11 @@ enum EventStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+}
+
+enum CheckInSessionMode {
+  GUEST_SCAN
+  POC_PORTAL
 }
 
 enum InvitationStatus {
@@ -82,6 +89,11 @@ model User {
   passwordHash       String?   @map("password_hash")
   role               Role      @default(STAFF)
   mustChangePassword Boolean   @default(false) @map("must_change_password")
+  // Plaintext one-time credential handed to a provisioned guest, cleared the
+  // moment they choose their own password. Never a shared constant: a single
+  // well-known bootstrap password across every guest account would let anyone
+  // who guesses a phone number sign in as that guest.
+  bootstrapCode      String?   @map("bootstrap_code")
   isActive           Boolean   @default(true) @map("is_active")
   tokenVersion       Int       @default(0) @map("token_version")
   lastLoginAt        DateTime? @map("last_login_at")
@@ -249,6 +261,9 @@ model InvitationStatusHistory {
   toStatus     InvitationStatus  @map("to_status")
   changedBy    String?           @map("changed_by")
   changer      User?             @relation("HistoryChangedBy", fields: [changedBy], references: [id])
+  // Where the change came from when no signed-in user made it — the POC
+  // portal marks arrivals with no session of its own.
+  source       String?
   changedAt    DateTime          @default(now()) @map("changed_at")
 
   @@index([invitationId])
@@ -256,16 +271,22 @@ model InvitationStatusHistory {
 }
 
 model EventCheckInSession {
-  id        String    @id @default(uuid())
-  eventId   String    @map("event_id")
-  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  isActive  Boolean   @default(true) @map("is_active")
-  startedBy String    @map("started_by")
-  starter   User      @relation("CheckInStartedBy", fields: [startedBy], references: [id])
-  startedAt DateTime  @default(now()) @map("started_at")
-  endedAt   DateTime? @map("ended_at")
+  id           String            @id @default(uuid())
+  eventId      String            @map("event_id")
+  event        Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  mode         CheckInSessionMode @default(GUEST_SCAN)
+  isActive     Boolean           @default(true) @map("is_active")
+  // POC_PORTAL only: the QR is a bearer credential, so a passcode the student
+  // POCs are told separately gates it, and the session expires on its own even
+  // if nobody remembers to end it.
+  passcodeHash String?           @map("passcode_hash")
+  expiresAt    DateTime?         @map("expires_at")
+  startedBy    String            @map("started_by")
+  starter      User              @relation("CheckInStartedBy", fields: [startedBy], references: [id])
+  startedAt    DateTime          @default(now()) @map("started_at")
+  endedAt      DateTime?         @map("ended_at")
 
-  @@index([eventId, isActive])
+  @@index([eventId, mode, isActive])
   @@map("event_check_in_sessions")
 }
 
@@ -398,6 +419,10 @@ model CourseCatalog {
   version      String
   description  String?
   status       CatalogStatus  @default(DRAFT)
+  // A published catalog every authenticated member can read without an
+  // explicit grant — the Commerce syllabi are department-wide reference
+  // material, not per-guest entitlements.
+  isPublic     Boolean        @default(false) @map("is_public")
   publishedAt  DateTime?      @map("published_at")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")

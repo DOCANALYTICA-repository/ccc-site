@@ -9,6 +9,7 @@ import { eventsRouter } from "./routes/events.js";
 import { importRouter } from "./routes/import.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { communityRouter } from "./routes/community.js";
+import { pocRouter } from "./routes/poc.js";
 import { networkRouter } from "./routes/network.js";
 import { coursesRouter } from "./routes/courses.js";
 import { surveysRouter } from "./routes/surveys.js";
@@ -51,6 +52,9 @@ export function createApp() {
   app.use("/api/import", importRouter);
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/community", communityRouter);
+  // Public by design: the POC gate portal authenticates with its own scoped
+  // token rather than a session cookie. See routes/poc.ts.
+  app.use("/api/poc", pocRouter);
   app.use("/api/network", networkRouter);
   app.use("/api/courses", coursesRouter);
   app.use("/api/surveys", surveysRouter);

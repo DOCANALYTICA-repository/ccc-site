@@ -9,7 +9,6 @@ import {
   AcceptInvite,
   AdminHub,
   ChangePassword,
-  CheckInPage,
   Contacts,
   CourseDetailPage,
   CoursesAdminPage,
@@ -24,6 +23,7 @@ import {
   MessagesPage,
   NetworkPage,
   NotificationsPage,
+  PocPortal,
   ProfilePage,
   SurveyAnalyticsPage,
   SurveysAdminPage,
@@ -33,8 +33,13 @@ import {
 
 export default function App() {
   // Warm every route chunk once the first screen is interactive, so route
-  // splitting never costs a navigation its instant paint.
-  useEffect(prefetchAllPages, []);
+  // splitting never costs a navigation its instant paint. Not on the POC
+  // portal: that is a phone on venue wifi that will never visit another
+  // route, and pulling the whole app down behind it buys nothing.
+  useEffect(() => {
+    if (window.location.pathname.startsWith("/poc")) return;
+    prefetchAllPages();
+  }, []);
 
   return (
     <ThemeProvider>
@@ -45,6 +50,12 @@ export default function App() {
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/accept-invite" element={<AcceptInvite />} />
+
+                {/* The POC gate portal. Deliberately outside every guard and
+                    outside AppShell: student point-of-contacts hold a scoped
+                    token from the venue QR, not an account, and the portal is
+                    a dead end with no route back into the application. */}
+                <Route path="/poc" element={<PocPortal />} />
                 <Route element={<ProtectedRoute allowPasswordChange />}>
                   <Route path="/change-password" element={<ChangePassword />} />
                 </Route>
@@ -63,7 +74,6 @@ export default function App() {
                     <Route path="/courses/:id" element={<CourseDetailPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/notifications" element={<NotificationsPage />} />
-                    <Route path="/check-in" element={<CheckInPage />} />
                     <Route path="/events/:id/survey" element={<EventSurveyPage />} />
                   </Route>
                 </Route>

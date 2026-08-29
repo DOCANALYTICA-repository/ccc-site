@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "assets/**"
+    }
+  },
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "buildCommand": "prisma generate && prisma migrate deploy && tsc -p tsconfig.json"
 }

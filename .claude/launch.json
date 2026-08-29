@@ -2,18 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ccc-frontend",
+      "name": "backend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "frontend",
-      "port": 5174
+      "port": 4000,
+      "cwd": "backend"
     },
     {
-      "name": "ccc-backend",
+      "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "backend",
-      "port": 4000
+      "port": 5173,
+      "cwd": "frontend"
     }
   ]
 }

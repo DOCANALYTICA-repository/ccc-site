@@ -11,8 +11,7 @@ import { InviteDrawer } from "@/components/InviteDrawer";
 import { WalkInDialog } from "@/components/WalkInDialog";
 import { cn } from "@/lib/cn";
 import type { EventRecord, Invitation, InvitationStatus } from "@/lib/types";
-import { QRCodeSVG } from "qrcode.react";
-import { Dialog } from "@/components/ui/Dialog";
+import { PocCheckInDialog } from "@/components/PocCheckInDialog";
 
 // status-arrived-fg is calibrated as the foreground for the black/white
 // "Arrived" chip, not as freestanding text — it inverts per theme, so on a
@@ -49,7 +48,6 @@ export function EventDetail() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
-  const [checkInToken, setCheckInToken] = useState("");
 
   const refreshEvent = eventQuery.refetch;
   const refreshInvites = invitesQuery.refetch;
@@ -60,25 +58,6 @@ export function EventDetail() {
     invalidateQuery("/events");
     invalidateQuery("/dashboard");
   }, [refreshEvent, refreshInvites]);
-
-  useEffect(() => {
-    if (!checkInOpen || !id) return;
-    const refresh = () => api.get<{ token: string }>(`/events/${id}/check-in-token`).then((r) => setCheckInToken(r.token));
-    refresh();
-    const timer = window.setInterval(refresh, 45_000);
-    return () => window.clearInterval(timer);
-  }, [checkInOpen, id]);
-
-  async function openCheckIn() {
-    await api.post(`/events/${id}/check-in-session`);
-    setCheckInOpen(true);
-  }
-
-  async function closeCheckIn() {
-    setCheckInOpen(false);
-    setCheckInToken("");
-    await api.delete(`/events/${id}/check-in-session`);
-  }
 
   const counts = useMemo(() => {
     const c: Record<InvitationStatus, number> = { UNCONFIRMED: 0, CONFIRMED: 0, DECLINED: 0, ARRIVED_IN_CAMPUS: 0 };
@@ -164,7 +143,7 @@ export function EventDetail() {
             <Link to={`/events/${id}/gate`}>
               <Button variant="secondary">Gate check-in view</Button>
             </Link>
-            <Button variant="secondary" onClick={openCheckIn}>Guest check-in QR</Button>
+            <Button variant="secondary" onClick={() => setCheckInOpen(true)}>POC check-in QR</Button>
             <Button variant="secondary" onClick={() => downloadFile(`/events/${id}/export`, "roster-export.xlsx")}>
               Export roster
             </Button>
@@ -274,13 +253,7 @@ export function EventDetail() {
         onInvited={load}
       />
       <WalkInDialog open={walkInOpen} onOpenChange={setWalkInOpen} eventId={id!} onAdded={load} />
-      <Dialog open={checkInOpen} onOpenChange={(open) => open ? setCheckInOpen(true) : closeCheckIn()} title="Guest check-in QR" description="Keep this screen visible at the venue. The signed code refreshes every minute.">
-        <div className="flex flex-col items-center gap-4 py-4">
-          {checkInToken ? <div className="rounded-card bg-white p-5"><QRCodeSVG value={`${window.location.origin}/check-in?token=${encodeURIComponent(checkInToken)}`} size={260} level="M" /></div> : <p className="text-sm text-ink-muted">Preparing secure QR…</p>}
-          <p className="max-w-sm text-center text-sm text-ink-muted">Guests scan with their phone camera, sign in, and are checked into this event.</p>
-          <Button variant="secondary" onClick={closeCheckIn}>End check-in session</Button>
-        </div>
-      </Dialog>
+      <PocCheckInDialog open={checkInOpen} onOpenChange={setCheckInOpen} eventId={id!} eventName={event.name} />
     </div>
   );
 }

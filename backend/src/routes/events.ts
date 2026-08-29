@@ -1,9 +1,10 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
-import jwt from "jsonwebtoken";
-import crypto from "node:crypto";
+import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireInternal } from "../middleware/auth.js";
+import { trustedOrigins } from "../middleware/security.js";
+import { generatePasscode, hashPasscode, signPortalToken } from "../lib/pocSession.js";
 import { ensureGuestAccount } from "../lib/provision.js";
 import { logAudit } from "../lib/audit.js";
 import {
@@ -218,37 +219,90 @@ eventsRouter.patch("/:id/invitations/:invId/status", async (req, res) => {
   res.json({ invitation });
 });
 
-eventsRouter.post("/:id/check-in-session", async (req, res) => {
+// -------------------- POC check-in portal sessions --------------------
+
+// Attendance is marked by student point-of-contacts scanning one QR at the
+// gate, not by guests scanning a screen. The QR is printed once and stays up
+// all evening, so it can't be the credential on its own — a passcode, handed
+// to POCs separately, is what actually opens the portal. See routes/poc.ts.
+
+const POC_SESSION_DEFAULT_HOURS = 12;
+
+function portalUrl(token: string) {
+  const [origin] = trustedOrigins();
+  return `${origin}/poc?t=${encodeURIComponent(token)}`;
+}
+
+/** The passcode is shown exactly once, at creation. It is stored only as an
+ * argon2 hash, so "I forgot it" means starting a new session — which is the
+ * right trade: a passcode that can be read back out of the admin UI is one
+ * more place it can leak from. */
+eventsRouter.post("/:id/poc-session", async (req, res) => {
+  const parsed = z
+    .object({
+      passcode: z.string().trim().regex(/^\d{4,8}$/, "Use 4–8 digits.").optional(),
+      hours: z.number().int().min(1).max(72).optional(),
+    })
+    .safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid session." });
+  }
+
   const event = await prisma.event.findUnique({ where: { id: req.params.id } });
   if (!event) return res.status(404).json({ error: "Event not found." });
+
+  const passcode = parsed.data.passcode ?? generatePasscode();
+  const expiresAt = new Date(Date.now() + (parsed.data.hours ?? POC_SESSION_DEFAULT_HOURS) * 3_600_000);
+  const passcodeHash = await hashPasscode(passcode);
+
   const session = await prisma.$transaction(async (tx) => {
     await tx.eventCheckInSession.updateMany({
-      where: { eventId: event.id, isActive: true },
+      where: { eventId: event.id, mode: "POC_PORTAL", isActive: true },
       data: { isActive: false, endedAt: new Date() },
     });
     return tx.eventCheckInSession.create({
-      data: { eventId: event.id, startedBy: req.user!.id },
+      data: { eventId: event.id, mode: "POC_PORTAL", passcodeHash, expiresAt, startedBy: req.user!.id },
     });
   });
-  res.status(201).json({ session });
+
+  await logAudit(req, "event.poc_session_started", {
+    entityType: "Event",
+    entityId: event.id,
+    diff: { sessionId: session.id, expiresAt },
+  });
+
+  const token = signPortalToken({ sessionId: session.id, eventId: event.id }, expiresAt);
+  res.status(201).json({
+    session: { id: session.id, startedAt: session.startedAt, expiresAt },
+    passcode,
+    portalUrl: portalUrl(token),
+  });
 });
 
-eventsRouter.get("/:id/check-in-token", async (req, res) => {
+/** Re-issues the QR link for a running session so the poster can be reprinted
+ * without resetting the passcode every POC has already been told. */
+eventsRouter.get("/:id/poc-session", async (req, res) => {
   const session = await prisma.eventCheckInSession.findFirst({
-    where: { eventId: req.params.id, isActive: true },
+    where: { eventId: req.params.id, mode: "POC_PORTAL", isActive: true },
     orderBy: { startedAt: "desc" },
   });
-  if (!session) return res.status(404).json({ error: "No active check-in session." });
-  const secret = process.env.CHECKIN_SECRET ?? process.env.AUTH_SECRET!;
-  const token = jwt.sign({ eventId: req.params.id, sessionId: session.id, nonce: crypto.randomUUID() }, secret, { expiresIn: "60s" });
-  res.json({ token, expiresAt: new Date(Date.now() + 60_000) });
+  if (!session || (session.expiresAt && session.expiresAt.getTime() < Date.now())) {
+    return res.json({ session: null });
+  }
+  const expiresAt = session.expiresAt ?? new Date(Date.now() + POC_SESSION_DEFAULT_HOURS * 3_600_000);
+  const token = signPortalToken({ sessionId: session.id, eventId: session.eventId }, expiresAt);
+  res.json({
+    session: { id: session.id, startedAt: session.startedAt, expiresAt },
+    portalUrl: portalUrl(token),
+  });
 });
 
-eventsRouter.delete("/:id/check-in-session", async (req, res) => {
+eventsRouter.delete("/:id/poc-session", async (req, res) => {
   await prisma.eventCheckInSession.updateMany({
-    where: { eventId: req.params.id, isActive: true },
+    where: { eventId: req.params.id, mode: "POC_PORTAL", isActive: true },
     data: { isActive: false, endedAt: new Date() },
   });
+  await logAudit(req, "event.poc_session_ended", { entityType: "Event", entityId: req.params.id });
   res.status(204).end();
 });
 
@@ -405,17 +459,21 @@ eventsRouter.get("/:id/export", async (req, res) => {
 eventsRouter.get("/:id/onboarding.csv", async (req, res) => {
   const invitations = await prisma.eventInvitation.findMany({
     where: { eventId: req.params.id },
-    include: { contact: { include: { account: { select: { phone: true, mustChangePassword: true, isActive: true } } } } },
+    include: { contact: { include: { account: { select: { phone: true, mustChangePassword: true, isActive: true, bootstrapCode: true } } } } },
     orderBy: { contact: { fullName: "asc" } },
   });
   const quote = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  // One-time code per guest, not a shared constant — this file is the only
+  // place it is ever readable, and it stops being valid the moment the guest
+  // sets their own password. Treat the download accordingly.
   const rows = [
-    ["Guest", "Phone login", "Onboarding state", "Bootstrap instruction"],
+    ["Guest", "Phone login", "One-time code", "Onboarding state", "Bootstrap instruction"],
     ...invitations.map(({ contact }) => {
       const account = contact.account;
       const state = !contact.phone ? "Account setup needed" : !account ? "Phone conflict or setup needed" : !account.isActive ? "Account disabled" : account.mustChangePassword ? "Password change required" : "Onboarded";
-      const instruction = account?.mustChangePassword ? "Sign in with this phone and temporary password 1234, then choose a private password." : "";
-      return [contact.fullName, account?.phone ?? contact.phone ?? "", state, instruction];
+      const code = account?.mustChangePassword ? account.bootstrapCode ?? "" : "";
+      const instruction = code ? "Sign in with this phone and one-time code, then choose a private password." : "";
+      return [contact.fullName, account?.phone ?? contact.phone ?? "", code, state, instruction];
     }),
   ];
   await logAudit(req, "event.onboarding_exported", { entityType: "Event", entityId: req.params.id, diff: { count: invitations.length } });
