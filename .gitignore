@@ -11,3 +11,6 @@ build/
 # backend/assets/syllabus. Anchored: an unanchored pattern also matches
 # backend/assets/syllabus on case-insensitive filesystems.
 /Syllabus/
+
+# Vercel CLI project link.
+.vercel/
